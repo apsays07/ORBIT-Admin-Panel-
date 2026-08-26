@@ -1,0 +1,434 @@
+"use client";
+
+import React, { useState, useRef, useEffect } from "react";
+import { createPortal } from "react-dom";
+import { MemberData, CreateMemberInput } from "@/types/member";
+import {
+  createMember,
+  checkUsernameAvailability,
+} from "@/lib/member/actions";
+import { cn } from "@/lib/utils";
+import { useToast } from "@/components/ui/toast";
+import {
+  X,
+  UserPlus,
+  Loader2,
+  CheckCircle2,
+  AlertCircle,
+  Eye,
+  EyeOff,
+  Copy,
+  Check,
+  KeyRound,
+  Sparkles,
+  User,
+} from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+
+interface CreateMemberModalProps {
+  isOpen: boolean;
+  onClose: () => void;
+  onCreated: (newMember: MemberData) => void;
+}
+
+export function CreateMemberModal({
+  isOpen,
+  onClose,
+  onCreated,
+}: CreateMemberModalProps) {
+  const toast = useToast();
+
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(true);
+
+  // Validation States
+  const [usernameStatus, setUsernameStatus] = useState<"idle" | "checking" | "available" | "unavailable">("idle");
+  const [usernameError, setUsernameError] = useState<string | null>(null);
+  const usernameTimerRef = useRef<NodeJS.Timeout | null>(null);
+
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [formError, setFormError] = useState<string | null>(null);
+
+  // Success Screen State
+  const [createdCredentials, setCreatedCredentials] = useState<{
+    username: string;
+    passwordText: string;
+    formatted: string;
+  } | null>(null);
+  const [hasCopied, setHasCopied] = useState(false);
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  function generateRandomPassword() {
+    const chars = "abcdefghjkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789!@#$";
+    let pass = "";
+    for (let i = 0; i < 10; i++) {
+      pass += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
+    setPassword(pass);
+  }
+
+  function handleUsernameChange(val: string) {
+    let clean = val.trim().toLowerCase();
+    if (clean.startsWith("@")) clean = clean.slice(1);
+    setUsername(clean);
+
+    if (usernameTimerRef.current) clearTimeout(usernameTimerRef.current);
+
+    if (!clean) {
+      setUsernameStatus("idle");
+      setUsernameError("Username is required.");
+      return;
+    }
+
+    if (!/^[a-z0-9_.-]{3,30}$/.test(clean)) {
+      setUsernameStatus("unavailable");
+      setUsernameError("3-30 characters (lowercase letters, numbers, _, -, .)");
+      return;
+    }
+
+    setUsernameStatus("checking");
+    setUsernameError(null);
+
+    usernameTimerRef.current = setTimeout(async () => {
+      const res = await checkUsernameAvailability(clean);
+      if (res.available) {
+        setUsernameStatus("available");
+        setUsernameError(null);
+      } else {
+        setUsernameStatus("unavailable");
+        setUsernameError(res.message || "Username is already taken.");
+      }
+    }, 300);
+  }
+
+  async function copyToClipboard(text: string) {
+    try {
+      await navigator.clipboard.writeText(text);
+      setHasCopied(true);
+      toast.success("Credentials Copied", "Formatted credentials copied to clipboard.");
+      setTimeout(() => setHasCopied(false), 2500);
+    } catch {
+      toast.error("Copy Failed", "Please manually select and copy the text.");
+    }
+  }
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    setFormError(null);
+
+    const cleanUser = username.trim().toLowerCase().replace(/^@/, "");
+    if (!cleanUser) {
+      setFormError("Username is required.");
+      return;
+    }
+
+    if (usernameStatus === "unavailable") {
+      setFormError(usernameError || "Username is not available.");
+      return;
+    }
+
+    const cleanPass = password.trim();
+    if (!cleanPass) {
+      setFormError("Password is required.");
+      return;
+    }
+
+    if (cleanPass.length < 6) {
+      setFormError("Password must be at least 6 characters.");
+      return;
+    }
+
+    setIsSubmitting(true);
+
+    const payload: CreateMemberInput = {
+      username: cleanUser,
+      name: cleanUser,
+      password: cleanPass,
+      role: "MEMBER",
+      status: "ACTIVE",
+    };
+
+    const res = await createMember(payload);
+    setIsSubmitting(false);
+
+    if (res.success && res.member) {
+      const formattedText = `username:"${cleanUser}"\npassword:"${cleanPass}"`;
+
+      // Automatically copy to clipboard for convenience
+      try {
+        await navigator.clipboard.writeText(formattedText);
+        setHasCopied(true);
+      } catch {
+        // Fallback handled by manual copy button
+      }
+
+      setCreatedCredentials({
+        username: cleanUser,
+        passwordText: cleanPass,
+        formatted: formattedText,
+      });
+
+      toast.success("Member Created", `@${cleanUser} successfully created in MongoDB.`);
+      onCreated(res.member);
+    } else {
+      setFormError(res.error || "Failed to create member account.");
+    }
+  }
+
+  function handleModalClose() {
+    setUsername("");
+    setPassword("");
+    setUsernameStatus("idle");
+    setUsernameError(null);
+    setFormError(null);
+    setCreatedCredentials(null);
+    setHasCopied(false);
+    onClose();
+  }
+
+  function handleCreateAnother() {
+    setUsername("");
+    setPassword("");
+    setUsernameStatus("idle");
+    setUsernameError(null);
+    setFormError(null);
+    setCreatedCredentials(null);
+    setHasCopied(false);
+  }
+
+  if (!isOpen || !mounted) return null;
+
+  return createPortal(
+    <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 sm:p-6 bg-black/80 backdrop-blur-xs animate-in fade-in-50 font-sans">
+      <div className="w-full max-w-md max-h-[85vh] bg-zinc-950 border border-zinc-800 rounded-3xl shadow-2xl flex flex-col overflow-hidden text-zinc-100 font-sans my-auto">
+        {/* Modal Top Header */}
+        <div className="px-6 py-4 border-b border-zinc-800/80 bg-zinc-900/60 flex items-center justify-between shrink-0">
+          <div className="flex items-center gap-3">
+            <div className="h-10 w-10 rounded-xl bg-blue-500/10 border border-blue-500/20 text-blue-400 flex items-center justify-center">
+              <UserPlus className="h-5 w-5" />
+            </div>
+            <div>
+              <h3 className="text-[16px] font-semibold text-zinc-100 tracking-tight">
+                Create New Member
+              </h3>
+              <p className="text-xs text-zinc-400">
+                Generate active member credentials for cross-website access
+              </p>
+            </div>
+          </div>
+
+          <button
+            type="button"
+            onClick={handleModalClose}
+            className="p-1.5 rounded-xl text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800 transition-colors cursor-pointer"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+
+        {/* Modal Body */}
+        {createdCredentials ? (
+          /* SUCCESS SCREEN */
+          <div className="p-6 space-y-5 flex-1 overflow-y-auto">
+            <div className="text-center py-2 space-y-1">
+              <div className="inline-flex h-12 w-12 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 items-center justify-center mb-1 shadow-xs">
+                <CheckCircle2 className="h-6 w-6" />
+              </div>
+              <h4 className="text-[17px] font-bold text-zinc-100 tracking-tight">
+                Member Created Successfully!
+              </h4>
+              <p className="text-xs text-zinc-400">
+                Credentials are saved in MongoDB and ready for immediate login.
+              </p>
+            </div>
+
+            {/* Formatted Code Box */}
+            <div className="relative group rounded-2xl bg-zinc-900/90 border border-zinc-800 p-4 space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-[11px] uppercase tracking-wider font-semibold text-zinc-400">
+                  Formatted Credentials
+                </span>
+                <span className="text-[11px] text-emerald-400 font-medium flex items-center gap-1">
+                  <Check className="h-3.5 w-3.5" /> Auto-Copied
+                </span>
+              </div>
+
+              <pre className="font-mono text-[13px] bg-black/50 border border-zinc-800/80 rounded-xl p-3.5 text-zinc-100 leading-relaxed overflow-x-auto select-all">
+                {createdCredentials.formatted}
+              </pre>
+
+              <button
+                type="button"
+                onClick={() => copyToClipboard(createdCredentials.formatted)}
+                className="w-full h-10 mt-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-medium text-xs flex items-center justify-center gap-2 shadow-md shadow-blue-600/20 cursor-pointer transition-all active:scale-[0.99]"
+              >
+                {hasCopied ? (
+                  <>
+                    <Check className="h-4 w-4 text-emerald-300" />
+                    <span>Copied to Clipboard!</span>
+                  </>
+                ) : (
+                  <>
+                    <Copy className="h-4 w-4" />
+                    <span>Copy Credentials (1-Click)</span>
+                  </>
+                )}
+              </button>
+            </div>
+
+            <div className="flex items-center gap-3 pt-2">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={handleCreateAnother}
+                className="flex-1 h-10 text-xs border-zinc-800 bg-zinc-900/80 hover:bg-zinc-800 text-zinc-300 rounded-xl cursor-pointer"
+              >
+                + Create Another
+              </Button>
+              <Button
+                type="button"
+                onClick={handleModalClose}
+                className="flex-1 h-10 text-xs font-semibold bg-white hover:bg-zinc-200 text-zinc-950 rounded-xl cursor-pointer"
+              >
+                Done
+              </Button>
+            </div>
+          </div>
+        ) : (
+          /* SIMPLE FORM */
+          <form onSubmit={handleSubmit} className="flex flex-col flex-1 overflow-hidden">
+            <div className="p-6 space-y-4 flex-1 overflow-y-auto">
+              {formError && (
+                <div className="p-3 rounded-xl bg-rose-950/40 border border-rose-900/60 text-rose-300 text-xs flex items-center gap-2 font-medium">
+                  <AlertCircle className="h-4 w-4 shrink-0 text-rose-400" />
+                  <span>{formError}</span>
+                </div>
+              )}
+
+              {/* Username */}
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-medium text-zinc-300 flex items-center gap-1.5">
+                    <User className="h-3.5 w-3.5 text-zinc-400" />
+                    <span>Username</span>
+                    <span className="text-rose-400">*</span>
+                  </label>
+                  {usernameStatus === "checking" && (
+                    <span className="text-[11px] text-zinc-400 flex items-center gap-1">
+                      <Loader2 className="h-3 w-3 animate-spin" /> Checking...
+                    </span>
+                  )}
+                  {usernameStatus === "available" && (
+                    <span className="text-[11px] text-emerald-400 flex items-center gap-1 font-medium">
+                      <Check className="h-3 w-3" /> Available
+                    </span>
+                  )}
+                  {usernameStatus === "unavailable" && usernameError && (
+                    <span className="text-[11px] text-rose-400 font-medium">
+                      {usernameError}
+                    </span>
+                  )}
+                </div>
+                <div className="relative">
+                  <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-zinc-500 font-mono text-xs select-none">
+                    @
+                  </span>
+                  <Input
+                    type="text"
+                    value={username}
+                    onChange={(e) => handleUsernameChange(e.target.value)}
+                    placeholder="e.g. rohit_sharma"
+                    disabled={isSubmitting}
+                    className="h-10 pl-8 bg-zinc-900/80 border-zinc-800 text-xs font-mono text-zinc-100 rounded-xl focus-visible:ring-blue-500"
+                    autoFocus
+                  />
+                </div>
+              </div>
+
+              {/* Password */}
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-medium text-zinc-300 flex items-center gap-1.5">
+                    <KeyRound className="h-3.5 w-3.5 text-zinc-400" />
+                    <span>Password</span>
+                    <span className="text-rose-400">*</span>
+                  </label>
+                  <button
+                    type="button"
+                    onClick={generateRandomPassword}
+                    className="text-[11px] text-blue-400 hover:text-blue-300 font-medium flex items-center gap-1 transition-colors cursor-pointer"
+                  >
+                    <Sparkles className="h-3 w-3" /> Generate Secure
+                  </button>
+                </div>
+
+                <div className="relative">
+                  <Input
+                    type={showPassword ? "text" : "password"}
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    placeholder="Enter password (min 6 chars)"
+                    disabled={isSubmitting}
+                    className="h-10 pr-10 bg-zinc-900/80 border-zinc-800 text-xs font-mono text-zinc-100 rounded-xl focus-visible:ring-blue-500"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-zinc-200 transition-colors cursor-pointer"
+                  >
+                    {showPassword ? (
+                      <EyeOff className="h-4 w-4" />
+                    ) : (
+                      <Eye className="h-4 w-4" />
+                    )}
+                  </button>
+                </div>
+                <p className="text-[11px] text-zinc-400">
+                  Password will be hashed using canonical PBKDF2 SHA-512 for cross-website login.
+                </p>
+              </div>
+            </div>
+
+            {/* Modal Footer */}
+            <div className="p-4 px-6 border-t border-zinc-900 bg-zinc-950/80 flex items-center justify-between gap-3 shrink-0">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={handleModalClose}
+                disabled={isSubmitting}
+                className="h-10 px-5 text-xs font-medium border-zinc-800 bg-zinc-900/80 hover:bg-zinc-800 text-zinc-300 rounded-xl cursor-pointer"
+              >
+                Cancel
+              </Button>
+
+              <Button
+                type="submit"
+                disabled={isSubmitting || usernameStatus === "checking" || !username.trim() || !password.trim()}
+                className="h-10 px-6 text-xs font-semibold bg-white hover:bg-zinc-100 text-zinc-950 rounded-xl shadow-md flex items-center gap-2 cursor-pointer transition-all hover:scale-[1.01] active:scale-[0.99] disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {isSubmitting ? (
+                  <>
+                    <Loader2 className="h-4 w-4 animate-spin text-zinc-950" />
+                    <span>Creating Member...</span>
+                  </>
+                ) : (
+                  <>
+                    <UserPlus className="h-4 w-4 text-zinc-950" />
+                    <span>Create Member</span>
+                  </>
+                )}
+              </Button>
+            </div>
+          </form>
+        )}
+      </div>
+    </div>,
+    document.body
+  );
+}

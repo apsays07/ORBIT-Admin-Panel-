@@ -1,0 +1,118 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" fill="none">
+  <defs>
+    <!-- Background Gradients -->
+    <radialGradient id="bgGlow" cx="50%" cy="40%" r="60%">
+      <stop offset="0%" stop-color="#1E293B" />
+      <stop offset="100%" stop-color="#070A12" />
+    </radialGradient>
+    
+    <!-- Outer Border Gradient -->
+    <linearGradient id="borderGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#38BDF8" stop-opacity="0.6" />
+      <stop offset="50%" stop-color="#3B82F6" stop-opacity="0.2" />
+      <stop offset="100%" stop-color="#8B5CF6" stop-opacity="0.4" />
+    </linearGradient>
+
+    <!-- Planet Spherical Gradient -->
+    <radialGradient id="coreSphere" cx="35%" cy="30%" r="70%">
+      <stop offset="0%" stop-color="#93C5FD" />
+      <stop offset="25%" stop-color="#3B82F6" />
+      <stop offset="70%" stop-color="#1D4ED8" />
+      <stop offset="100%" stop-color="#0F172A" />
+    </radialGradient>
+
+    <!-- Specular Highlight for Sphere -->
+    <linearGradient id="specularGlow" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#FFFFFF" stop-opacity="0.8" />
+      <stop offset="100%" stop-color="#FFFFFF" stop-opacity="0" />
+    </linearGradient>
+
+    <!-- Primary Ring Gradient -->
+    <linearGradient id="ringGradPrimary" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#38BDF8" />
+      <stop offset="40%" stop-color="#60A5FA" />
+      <stop offset="75%" stop-color="#A855F7" />
+      <stop offset="100%" stop-color="#38BDF8" />
+    </linearGradient>
+
+    <!-- Secondary Accent Ring Gradient -->
+    <linearGradient id="ringGradSecondary" x1="100%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#06B6D4" stop-opacity="0.8" />
+      <stop offset="50%" stop-color="#3B82F6" stop-opacity="0.3" />
+      <stop offset="100%" stop-color="#8B5CF6" stop-opacity="0.7" />
+    </linearGradient>
+
+    <!-- Satellite / Beacon Gradient -->
+    <radialGradient id="satelliteGlow" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#FFFFFF" />
+      <stop offset="40%" stop-color="#38BDF8" />
+      <stop offset="100%" stop-color="#0284C7" stop-opacity="0" />
+    </radialGradient>
+
+    <!-- Filter Glow Effects -->
+    <filter id="softGlow" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur stdDeviation="8" result="blur" />
+      <feComposite in="SourceGraphic" in2="blur" operator="over" />
+    </filter>
+
+    <filter id="intenseGlow" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="16" result="blur1" />
+      <feGaussianBlur stdDeviation="6" result="blur2" />
+      <feMerge>
+        <feMergeNode in="blur1" />
+        <feMergeNode in="blur2" />
+        <feMergeNode in="SourceGraphic" />
+      </feMerge>
+    </filter>
+  </defs>
+
+  <!-- Base Rounded Container (Squircle / Rounded Tile) -->
+  <rect width="512" height="512" rx="128" fill="url(#bgGlow)" />
+  
+  <!-- Subtle Sleek Border Ring -->
+  <rect x="8" y="8" width="496" height="496" rx="120" stroke="url(#borderGrad)" stroke-width="3" fill="none" />
+
+  <!-- Ambient Backdrop Core Halo -->
+  <circle cx="256" cy="256" r="140" fill="#2563EB" opacity="0.15" filter="url(#intenseGlow)" />
+
+  <!-- Secondary Orbital Ring (Behind) -->
+  <ellipse cx="256" cy="256" rx="190" ry="70" stroke="url(#ringGradSecondary)" stroke-width="8" stroke-dasharray="16 8 32 8" fill="none" transform="rotate(-60 256 256)" opacity="0.6" filter="url(#softGlow)" />
+
+  <!-- Primary Orbital Ring (Back half - behind core) -->
+  <g filter="url(#softGlow)">
+    <path d="M 96 256 A 180 72 0 0 1 416 256" stroke="url(#ringGradPrimary)" stroke-width="22" stroke-linecap="round" fill="none" transform="rotate(-28 256 256)" opacity="0.5" />
+  </g>
+
+  <!-- Central Orbital Sphere / Celestial Core -->
+  <g filter="url(#softGlow)">
+    <!-- Main Planet Core -->
+    <circle cx="256" cy="256" r="88" fill="url(#coreSphere)" />
+    
+    <!-- Top-Left Specular Sheen -->
+    <ellipse cx="228" cy="216" rx="44" ry="26" fill="url(#specularGlow)" transform="rotate(-30 228 216)" opacity="0.6" />
+    
+    <!-- Subtle Inner Horizon Ring -->
+    <ellipse cx="256" cy="256" rx="88" ry="88" stroke="#60A5FA" stroke-width="2.5" stroke-opacity="0.4" fill="none" />
+  </g>
+
+  <!-- Primary Orbital Ring (Front half - in front of core for 3D depth) -->
+  <g filter="url(#intenseGlow)">
+    <path d="M 416 256 A 180 72 0 0 1 96 256" stroke="url(#ringGradPrimary)" stroke-width="22" stroke-linecap="round" fill="none" transform="rotate(-28 256 256)" />
+  </g>
+
+  <!-- Satellite / Orbiting Energy Node on the Front Ring -->
+  <g transform="translate(382, 190)" filter="url(#intenseGlow)">
+    <!-- Halo -->
+    <circle cx="0" cy="0" r="28" fill="url(#satelliteGlow)" opacity="0.9" />
+    <!-- Core Spark -->
+    <circle cx="0" cy="0" r="10" fill="#FFFFFF" />
+    <!-- 4-Point Flare -->
+    <path d="M 0 -22 L 3 -6 L 19 0 L 3 6 L 0 22 L -3 6 L -19 0 L -3 -6 Z" fill="#E0F2FE" opacity="0.95" />
+  </g>
+
+  <!-- Tiny Satellite Particle 2 (Top Left Orbit) -->
+  <g transform="translate(142, 280)" filter="url(#softGlow)">
+    <circle cx="0" cy="0" r="6" fill="#38BDF8" />
+    <circle cx="0" cy="0" r="3" fill="#FFFFFF" />
+  </g>
+</svg>
