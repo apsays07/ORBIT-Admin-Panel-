@@ -26,6 +26,8 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { IpoModal } from "./ipo-modal";
+import { Tooltip } from "@/components/ui/tooltip";
+import { useToast } from "@/components/ui/toast";
 import { cn } from "@/lib/utils";
 
 interface IpoManagementViewProps {
@@ -44,6 +46,7 @@ export function IpoManagementView({
   totalPages,
   availableStatuses,
 }: IpoManagementViewProps) {
+  const toast = useToast();
   const router = useRouter();
   const searchParams = useSearchParams();
   const [isPending, startTransition] = useTransition();
@@ -130,10 +133,15 @@ export function IpoManagementView({
     try {
       const res = await completeIpo(id);
       if (res.success) {
+        toast.success("IPO Completed", "IPO status has been updated to completed.");
         startTransition(() => {
           router.refresh();
         });
+      } else {
+        toast.error("Failed to Update IPO", res.error || "Could not complete IPO.");
       }
+    } catch (err: unknown) {
+      toast.error("Server Error", err instanceof Error ? err.message : "Unexpected error.");
     } finally {
       setActionInProgressId(null);
     }
@@ -145,10 +153,15 @@ export function IpoManagementView({
       const res = await deleteIpo(id);
       if (res.success) {
         setDeleteConfirmId(null);
+        toast.success("IPO Deleted", "The IPO opportunity was successfully removed.");
         startTransition(() => {
           router.refresh();
         });
+      } else {
+        toast.error("Failed to Delete IPO", res.error || "Could not delete IPO.");
       }
+    } catch (err: unknown) {
+      toast.error("Server Error", err instanceof Error ? err.message : "Unexpected error.");
     } finally {
       setActionInProgressId(null);
     }
@@ -311,7 +324,7 @@ export function IpoManagementView({
               return (
                 <div
                   key={ipo.id}
-                  className="rounded-2xl border border-emerald-500/25 bg-[#090e0b]/90 p-5 sm:p-6 shadow-[0_0_30px_-5px_rgba(16,185,129,0.12)] space-y-4 transition-all"
+                  className="rounded-2xl border border-emerald-500/25 bg-[#090e0b]/90 p-5 sm:p-6 shadow-[0_0_30px_-5px_rgba(16,185,129,0.12)] space-y-4 transition-all duration-200 hover:-translate-y-0.5 hover:border-emerald-500/40 hover:shadow-[0_4px_25px_-5px_rgba(16,185,129,0.18)]"
                 >
                   {/* Card Header Row */}
                   <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
@@ -500,19 +513,30 @@ export function IpoManagementView({
           {/* Search and Filters */}
           <div className="flex items-center gap-2.5 flex-wrap">
             <form onSubmit={handleSearchSubmit} className="relative">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-zinc-500" />
+              <Search className={cn("absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 transition-colors duration-150", searchQuery ? "text-emerald-400" : "text-zinc-500")} />
               <Input
                 type="text"
                 value={searchQuery}
                 onChange={(e) => handleSearchChange(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Escape") {
+                    handleClearSearch();
+                  }
+                }}
                 placeholder="Search IPOs..."
-                className="pl-8 pr-7 bg-zinc-950/90 border-zinc-800 text-xs h-9 w-48 text-zinc-100 placeholder:text-zinc-500 focus-visible:ring-zinc-700 rounded-xl"
+                className="pl-8 pr-7 bg-zinc-950/90 border-zinc-800 text-xs h-9 w-48 text-zinc-100 placeholder:text-zinc-500 focus-visible:ring-1 focus-visible:ring-emerald-500/40 focus-visible:border-emerald-500/50 rounded-xl transition-colors duration-150"
               />
-              {searchQuery && (
+              {isPending && searchQuery && (
+                <span className="absolute right-2.5 top-1/2 -translate-y-1/2 z-10">
+                  <Loader2 className="h-3 w-3 animate-spin text-emerald-400" />
+                </span>
+              )}
+              {!isPending && searchQuery && (
                 <button
                   type="button"
                   onClick={handleClearSearch}
-                  className="absolute right-2 top-1/2 -translate-y-1/2 p-0.5 text-zinc-500 hover:text-zinc-200 cursor-pointer"
+                  className="absolute right-2 top-1/2 -translate-y-1/2 p-0.5 text-zinc-500 hover:text-zinc-200 hover:bg-zinc-800/80 rounded cursor-pointer transition-all duration-150 active:scale-95"
+                  aria-label="Clear search"
                 >
                   <X className="h-3 w-3" />
                 </button>
@@ -528,18 +552,39 @@ export function IpoManagementView({
             <div className="absolute top-0 left-0 right-0 h-[2px] bg-gradient-to-r from-emerald-500 via-teal-400 to-cyan-500 animate-pulse z-10" />
           )}
           {initialIpos.length === 0 ? (
-            <div className="py-16 text-center space-y-3">
+            <div className="py-16 text-center space-y-4">
               <div className="h-12 w-12 rounded-2xl bg-zinc-800/80 text-zinc-400 flex items-center justify-center mx-auto border border-zinc-700">
                 <Layers className="h-6 w-6" />
               </div>
               <div className="space-y-1">
-                <h4 className="text-sm font-semibold text-zinc-200">No IPO records found</h4>
-                <p className="text-xs text-zinc-500 max-w-sm mx-auto">
+                <h4 className="text-sm font-semibold text-zinc-200">
+                  {searchQuery || selectedStatus !== "ALL" || selectedCategory !== "ALL" ? "No IPO records found" : "No registered IPOs"}
+                </h4>
+                <p className="text-xs text-zinc-400 max-w-sm mx-auto">
                   {searchQuery || selectedStatus !== "ALL" || selectedCategory !== "ALL"
-                    ? "No registered IPOs match your search or filter."
+                    ? "Try adjusting your search query or filter criteria to find what you are looking for."
                     : "There are currently no IPO records in the catalog."}
                 </p>
               </div>
+              {(searchQuery || selectedStatus !== "ALL" || selectedCategory !== "ALL") && (
+                <div className="pt-1">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      setSearchQuery("");
+                      setSelectedStatus("ALL");
+                      setSelectedCategory("ALL");
+                      applyFilters("", "ALL", "ALL", 1);
+                    }}
+                    className="h-8.5 px-4 text-xs font-medium border-zinc-700 bg-zinc-900 text-zinc-200 hover:bg-zinc-800 rounded-xl cursor-pointer active:scale-95 transition-all"
+                  >
+                    <X className="h-3.5 w-3.5 mr-1 text-zinc-400" />
+                    Clear Filters
+                  </Button>
+                </div>
+              )}
             </div>
           ) : (
             <div className="overflow-x-auto">
@@ -556,7 +601,7 @@ export function IpoManagementView({
                 <tbody className="divide-y divide-zinc-800/60">
                   {initialIpos.map((ipo) => {
                     return (
-                      <tr key={ipo.id} className="hover:bg-zinc-800/35 transition-colors group">
+                      <tr key={ipo.id} className="hover:bg-zinc-800/40 transition-colors duration-150 group">
                         {/* 1. IPO Name */}
                         <td className="py-3.5 px-4">
                           <div className="font-semibold text-zinc-100 text-[13.5px] flex items-center gap-1.5 group-hover:text-white transition-colors">
@@ -614,26 +659,30 @@ export function IpoManagementView({
                         {/* 7. Actions */}
                         <td className="py-3.5 px-4 text-right">
                           <div className="flex items-center justify-end gap-1.5">
-                            <Link href={`/ad/applications?ipoId=${ipo.id}`} prefetch={true}>
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                className="h-7 w-7 p-0 rounded-lg text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800 cursor-pointer"
-                                title="View Applications"
-                              >
-                                <FileSpreadsheet className="h-3.5 w-3.5" />
-                              </Button>
-                            </Link>
+                            <Tooltip content="View applications" side="top">
+                              <Link href={`/ad/applications?ipoId=${ipo.id}`} prefetch={true}>
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  className="h-7 w-7 p-0 rounded-lg text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800 cursor-pointer transition-all duration-150 active:scale-95"
+                                  aria-label="View Applications"
+                                >
+                                  <FileSpreadsheet className="h-3.5 w-3.5" />
+                                </Button>
+                              </Link>
+                            </Tooltip>
 
-                            <Button
-                              onClick={() => handleOpenEdit(ipo)}
-                              variant="outline"
-                              size="sm"
-                              className="h-7 px-2.5 rounded-lg bg-zinc-800/80 hover:bg-zinc-700 text-zinc-200 hover:text-white border border-zinc-700/70 text-[11.5px] font-medium transition-all shadow-xs gap-1 cursor-pointer"
-                            >
-                              <Edit2 className="h-3 w-3 text-indigo-400" />
-                              <span>Edit</span>
-                            </Button>
+                            <Tooltip content="Edit IPO" side="top">
+                              <Button
+                                onClick={() => handleOpenEdit(ipo)}
+                                variant="outline"
+                                size="sm"
+                                className="h-7 px-2.5 rounded-lg bg-zinc-800/80 hover:bg-zinc-700 text-zinc-200 hover:text-white border border-zinc-700/70 text-[11.5px] font-medium transition-all duration-150 shadow-xs gap-1 cursor-pointer active:scale-95"
+                              >
+                                <Edit2 className="h-3 w-3 text-indigo-400" />
+                                <span>Edit</span>
+                              </Button>
+                            </Tooltip>
                           </div>
                         </td>
                       </tr>

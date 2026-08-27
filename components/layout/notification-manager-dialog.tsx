@@ -29,6 +29,8 @@ import {
   Coins,
   FileCheck2,
 } from "lucide-react";
+import { useModalKeyboardShortcuts } from "@/lib/hooks/use-keyboard-shortcuts";
+import { KbdEnter, KbdEsc } from "@/components/ui/kbd";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { MemberSelectDropdown } from "@/components/ui/member-select-dropdown";
@@ -69,6 +71,12 @@ export function NotificationManagerDialog({
   const [members, setMembers] = useState<MemberOption[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  useModalKeyboardShortcuts({
+    isOpen,
+    onClose,
+    isSubmitting,
+  });
 
   useEffect(() => {
     setMounted(true);
@@ -332,9 +340,10 @@ export function NotificationManagerDialog({
                 variant="outline"
                 onClick={onClose}
                 disabled={isSubmitting}
-                className="h-10 px-5 text-xs font-medium border-zinc-800 bg-zinc-900/80 hover:bg-zinc-800 text-zinc-300 rounded-xl cursor-pointer"
+                className="h-10 px-5 text-xs font-medium border-zinc-800 bg-zinc-900/80 hover:bg-zinc-800 text-zinc-300 rounded-xl cursor-pointer flex items-center gap-2"
               >
-                Cancel
+                <span>Cancel</span>
+                <KbdEsc />
               </Button>
 
               <Button
@@ -351,11 +360,13 @@ export function NotificationManagerDialog({
                   <>
                     <CheckCircle2 className="h-4 w-4" />
                     <span>Save Changes</span>
+                    <KbdEnter className="bg-blue-700/80 border-blue-400/40 text-blue-100" />
                   </>
                 ) : (
                   <>
                     <Send className="h-4 w-4" />
                     <span>Send Notification</span>
+                    <KbdEnter className="bg-blue-700/80 border-blue-400/40 text-blue-100" />
                   </>
                 )}
               </Button>

@@ -26,6 +26,7 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { MemberAvatar } from "@/components/ui/member-avatar";
+import { useModalKeyboardShortcuts } from "@/lib/hooks/use-keyboard-shortcuts";
 import { cn, formatCombinedApplicants } from "@/lib/utils";
 
 interface ApplicationDetailsDrawerProps {
@@ -55,15 +56,11 @@ export function ApplicationDetailsDrawer({
     setMounted(true);
   }, []);
 
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "Escape" && isOpen) {
-        onClose();
-      }
-    };
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [isOpen, onClose]);
+  useModalKeyboardShortcuts({
+    isOpen,
+    onClose,
+    isSubmitting: isUpdatingStatus,
+  });
 
   if (!isOpen || !application || !mounted) return null;
 

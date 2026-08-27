@@ -2,6 +2,7 @@
 
 import React, { useState, useRef, useEffect } from "react";
 import { Building, ChevronDown, Check, Search, Sparkles, Layers, ShieldCheck, Clock } from "lucide-react";
+import { useDropdownKeyboard } from "@/lib/hooks/use-keyboard-shortcuts";
 import { cn } from "@/lib/utils";
 
 export interface OfferingDropdownItem {
@@ -40,6 +41,33 @@ export function OfferingSelectDropdown({
   const containerRef = useRef<HTMLDivElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
 
+  const filteredItems = items.filter((item) => {
+    if (!search.trim()) return true;
+    const q = search.toLowerCase().trim();
+    return (
+      item.name.toLowerCase().includes(q) ||
+      (item.category && item.category.toLowerCase().includes(q)) ||
+      (item.status && item.status.toLowerCase().includes(q))
+    );
+  });
+
+  const selectableList = includeAllOption && !search 
+    ? [{ id: "ALL", name: allOptionLabel }, ...filteredItems]
+    : filteredItems;
+
+  const { highlightedIndex, handleKeyDown } = useDropdownKeyboard({
+    isOpen,
+    itemCount: selectableList.length,
+    onSelect: (index: number) => {
+      const chosen = selectableList[index];
+      if (chosen) {
+        onChange(chosen.id);
+        setIsOpen(false);
+      }
+    },
+    onClose: () => setIsOpen(false),
+  });
+
   // Close when clicking outside
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
@@ -74,16 +102,6 @@ export function OfferingSelectDropdown({
   const displayCount = isAllSelected
     ? typeof totalAllCount === "number" ? totalAllCount : items.reduce((acc, i) => acc + (i.count || 0), 0)
     : selectedItem?.count;
-
-  const filteredItems = items.filter((item) => {
-    if (!search.trim()) return true;
-    const q = search.toLowerCase().trim();
-    return (
-      item.name.toLowerCase().includes(q) ||
-      (item.category && item.category.toLowerCase().includes(q)) ||
-      (item.status && item.status.toLowerCase().includes(q))
-    );
-  });
 
   function getStatusBadge(item: OfferingDropdownItem) {
     if (item.isCompleted || item.status === "COMPLETED" || item.status === "CLOSED" || item.status === "LISTED") {
@@ -176,6 +194,7 @@ export function OfferingSelectDropdown({
                   type="text"
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
+                  onKeyDown={handleKeyDown}
                   placeholder="Search IPO offerings..."
                   className="w-full h-8 pl-8 pr-3 text-xs bg-zinc-900/80 border border-zinc-800 rounded-lg text-zinc-100 placeholder:text-zinc-500 focus:outline-hidden focus:border-blue-500/60 transition-colors"
                 />
@@ -197,6 +216,8 @@ export function OfferingSelectDropdown({
                   "w-full px-2.5 py-2 rounded-lg text-left flex items-center justify-between gap-2 transition-all duration-150 cursor-pointer",
                   isAllSelected
                     ? "bg-blue-600/15 border border-blue-500/30"
+                    : highlightedIndex === 0
+                    ? "bg-zinc-800/90 text-zinc-100 ring-1 ring-zinc-700"
                     : "hover:bg-zinc-900/90 border border-transparent"
                 )}
               >
@@ -223,8 +244,10 @@ export function OfferingSelectDropdown({
                 No offerings match &quot;{search}&quot;
               </div>
             ) : (
-              filteredItems.map((item) => {
+              filteredItems.map((item, idx) => {
                 const isSelected = item.id === value;
+                const itemIndex = includeAllOption && !search ? idx + 1 : idx;
+                const isHighlighted = highlightedIndex === itemIndex;
                 return (
                   <button
                     key={item.id}
@@ -237,6 +260,8 @@ export function OfferingSelectDropdown({
                       "w-full px-2.5 py-2 rounded-lg text-left flex items-center justify-between gap-2 transition-all duration-150 cursor-pointer group",
                       isSelected
                         ? "bg-blue-600/15 border border-blue-500/30"
+                        : isHighlighted
+                        ? "bg-zinc-800/90 text-zinc-100 ring-1 ring-zinc-700"
                         : "hover:bg-zinc-900/90 border border-transparent"
                     )}
                   >

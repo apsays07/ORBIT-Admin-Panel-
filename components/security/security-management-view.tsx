@@ -20,12 +20,14 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { useToast } from "@/components/ui/toast";
 
 interface SecurityManagementViewProps {
   data: SecurityOverviewData;
 }
 
 export function SecurityManagementView({ data }: SecurityManagementViewProps) {
+  const toast = useToast();
   const { metrics, sessions, recentSecurityEvents } = data;
   const [searchQuery, setSearchQuery] = useState("");
   const [revokingId, setRevokingId] = useState<string | null>(null);
@@ -50,10 +52,14 @@ export function SecurityManagementView({ data }: SecurityManagementViewProps) {
     const res = await revokeSession(sessionId);
     setRevokingId(null);
     if (res.success) {
-      setFeedback({ type: "success", message: `Session ${sessionId} successfully revoked.` });
+      const msg = `Session ${sessionId} successfully revoked.`;
+      setFeedback({ type: "success", message: msg });
+      toast.success("Session Revoked", msg);
       setTimeout(() => setFeedback(null), 4000);
     } else {
-      setFeedback({ type: "error", message: res.error || "Failed to revoke session." });
+      const msg = res.error || "Failed to revoke session.";
+      setFeedback({ type: "error", message: msg });
+      toast.error("Revocation Failed", msg);
     }
   }
 
@@ -66,10 +72,14 @@ export function SecurityManagementView({ data }: SecurityManagementViewProps) {
     const res = await revokeAllOtherSessions();
     setIsRevokingAll(false);
     if (res.success) {
-      setFeedback({ type: "success", message: "All sessions have been revoked." });
+      const msg = "All other sessions have been revoked.";
+      setFeedback({ type: "success", message: msg });
+      toast.success("All Sessions Revoked", msg);
       setTimeout(() => setFeedback(null), 4000);
     } else {
-      setFeedback({ type: "error", message: res.error || "Failed to revoke all sessions." });
+      const msg = res.error || "Failed to revoke all sessions.";
+      setFeedback({ type: "error", message: msg });
+      toast.error("Revocation Failed", msg);
     }
   }
 

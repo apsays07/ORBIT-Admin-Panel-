@@ -1,5 +1,17 @@
 import { getDatabase } from "@/lib/db/mongodb";
 import { MemberPerformanceCategory } from "@/types/member";
+import {
+  calculateRankings,
+  calculateAllotmentRate,
+  calculateContributorShare,
+  calculateApplicationPanCount,
+  calculateAllottedLotsCount,
+  formatCurrency,
+  formatPercentage,
+  formatLots,
+  safeAdd,
+  normalizeNumeric,
+} from "@/lib/calculations";
 
 export class PerformanceService {
   static async getMemberPerformanceRecords(): Promise<MemberPerformanceCategory[]> {
@@ -7,24 +19,39 @@ export class PerformanceService {
     if (!db) return [];
 
     const [membersRaw, appsRaw, distsRaw] = await Promise.all([
-      db.collection("members").find({}, { projection: { _id: 0, id: 1, name: 1, username: 1 } }).maxTimeMS(8000).toArray(),
-      db.collection("applications").find({}, {
-        projection: {
-          id: 1,
-          ipoId: 1,
-          ipoName: 1,
-          memberId: 1,
-          applicantName: 1,
-          numberOfPanCards: 1,
-          panNumbers: 1,
-          totalContribution: 1,
-          contributors: 1,
-          status: 1,
-          allotmentStatus: 1,
-          allottedIndices: 1,
-        },
-      }).maxTimeMS(8000).toArray(),
-      db.collection("profit_distributions").find({}, { projection: { memberPayouts: 1 } }).maxTimeMS(8000).toArray(),
+      db
+        .collection("members")
+        .find({}, { projection: { _id: 0, id: 1, name: 1, username: 1, avatar: 1 } })
+        .maxTimeMS(8000)
+        .toArray(),
+      db
+        .collection("applications")
+        .find(
+          {},
+          {
+            projection: {
+              id: 1,
+              ipoId: 1,
+              ipoName: 1,
+              memberId: 1,
+              applicantName: 1,
+              numberOfPanCards: 1,
+              panNumbers: 1,
+              totalContribution: 1,
+              contributors: 1,
+              status: 1,
+              allotmentStatus: 1,
+              allottedIndices: 1,
+            },
+          }
+        )
+        .maxTimeMS(8000)
+        .toArray(),
+      db
+        .collection("profit_distributions")
+        .find({}, { projection: { memberPayouts: 1 } })
+        .maxTimeMS(8000)
+        .toArray(),
     ]);
 
     const memberMap = new Map<string, { id: string; name: string; username: string; avatar?: string }>();
@@ -44,7 +71,7 @@ export class PerformanceService {
       (dist.memberPayouts || []).forEach((p: { memberId: string; profit: number }) => {
         if (p.memberId) {
           const cur = profitMap.get(p.memberId) || 0;
-          profitMap.set(p.memberId, cur + (p.profit || 0));
+          profitMap.set(p.memberId, safeAdd(cur, p.profit));
         }
       });
     });
@@ -55,54 +82,53 @@ export class PerformanceService {
     const allottedLotsMap = new Map<string, number>();
 
     appsRaw.forEach((app: any) => {
-      const panCount =
-        app.numberOfPanCards ||
-        (Array.isArray(app.panNumbers) && app.panNumbers.length > 0 ? app.panNumbers.length : 1);
+      const panCount = calculateApplicationPanCount(app.panNumbers, app.numberOfPanCards);
       const isSolo = !app.contributors || app.contributors.length === 0;
-
-      let allottedCount = 0;
-      if (Array.isArray(app.allottedIndices) && app.allottedIndices.length > 0) {
-        allottedCount = app.allottedIndices.length;
-      } else if (app.status === "ALLOTTED" || app.allotmentStatus === "ALLOTTED") {
-        allottedCount = panCount;
-      }
+      const allottedCount = calculateAllottedLotsCount(
+        app.status,
+        app.allotmentStatus,
+        app.allottedIndices,
+        panCount
+      );
 
       if (isSolo) {
         if (app.memberId) {
-          capitalMap.set(app.memberId, (capitalMap.get(app.memberId) || 0) + (app.totalContribution || 0));
-          totalAppliedLotsMap.set(app.memberId, (totalAppliedLotsMap.get(app.memberId) || 0) + panCount);
+          capitalMap.set(app.memberId, safeAdd(capitalMap.get(app.memberId) || 0, app.totalContribution));
+          totalAppliedLotsMap.set(app.memberId, safeAdd(totalAppliedLotsMap.get(app.memberId) || 0, panCount));
 
           const memberIpos = ipoAppliedLotsMap.get(app.memberId) || new Map();
           const curIpoLots = memberIpos.get(app.ipoId) || { ipoName: app.ipoName || "IPO", lots: 0 };
-          curIpoLots.lots += panCount;
+          curIpoLots.lots = safeAdd(curIpoLots.lots, panCount);
           if (app.ipoName) curIpoLots.ipoName = app.ipoName;
           memberIpos.set(app.ipoId, curIpoLots);
           ipoAppliedLotsMap.set(app.memberId, memberIpos);
 
           if (allottedCount > 0) {
-            allottedLotsMap.set(app.memberId, (allottedLotsMap.get(app.memberId) || 0) + allottedCount);
+            allottedLotsMap.set(app.memberId, safeAdd(allottedLotsMap.get(app.memberId) || 0, allottedCount));
           }
         }
       } else {
         const totalAmount =
-          app.contributors.reduce((sum: number, c: { amount?: number }) => sum + (c.amount || 0), 0) || app.totalContribution || 1;
+          app.contributors.reduce((sum: number, c: { amount?: number }) => safeAdd(sum, c.amount), 0) ||
+          normalizeNumeric(app.totalContribution, 1);
+
         app.contributors.forEach((c: { memberId?: string; amount?: number; memberName?: string }) => {
           if (c.memberId) {
-            const share = (c.amount || 0) / totalAmount;
+            const share = calculateContributorShare(c.amount, totalAmount);
             const approxLots = Math.max(1, Math.round(panCount * share));
-            capitalMap.set(c.memberId, (capitalMap.get(c.memberId) || 0) + (c.amount || 0));
-            totalAppliedLotsMap.set(c.memberId, (totalAppliedLotsMap.get(c.memberId) || 0) + approxLots);
+            capitalMap.set(c.memberId, safeAdd(capitalMap.get(c.memberId) || 0, c.amount));
+            totalAppliedLotsMap.set(c.memberId, safeAdd(totalAppliedLotsMap.get(c.memberId) || 0, approxLots));
 
             const memberIpos = ipoAppliedLotsMap.get(c.memberId) || new Map();
             const curIpoLots = memberIpos.get(app.ipoId) || { ipoName: app.ipoName || "IPO", lots: 0 };
-            curIpoLots.lots += approxLots;
+            curIpoLots.lots = safeAdd(curIpoLots.lots, approxLots);
             if (app.ipoName) curIpoLots.ipoName = app.ipoName;
             memberIpos.set(app.ipoId, curIpoLots);
             ipoAppliedLotsMap.set(c.memberId, memberIpos);
 
             if (allottedCount > 0) {
               const approxAllotted = Math.max(1, Math.round(allottedCount * share));
-              allottedLotsMap.set(c.memberId, (allottedLotsMap.get(c.memberId) || 0) + approxAllotted);
+              allottedLotsMap.set(c.memberId, safeAdd(allottedLotsMap.get(c.memberId) || 0, approxAllotted));
             }
           }
         });
@@ -134,7 +160,7 @@ export class PerformanceService {
         }
       });
 
-      const rate = appliedLots > 0 ? Math.round((allottedLots / appliedLots) * 100) : 0;
+      const rate = calculateAllotmentRate(allottedLots, appliedLots);
       const formattedUser = m.username.startsWith("@") ? m.username : `@${m.username}`;
 
       const baseInfo = {
@@ -145,49 +171,145 @@ export class PerformanceService {
       };
 
       if (profit > 0) {
-        highestProfitRows.push({ member: baseInfo, rawValue: profit, valueDisplay: `₹${profit.toLocaleString("en-IN")}`, context: `${allottedLots} lots allotted` });
+        highestProfitRows.push({
+          member: baseInfo,
+          rawValue: profit,
+          valueDisplay: formatCurrency(profit),
+          context: `${allottedLots} lots allotted`,
+        });
       }
       if (capital > 0) {
-        highestCapitalRows.push({ member: baseInfo, rawValue: capital, valueDisplay: `₹${capital.toLocaleString("en-IN")}`, context: `${appliedLots} lots pooled` });
+        highestCapitalRows.push({
+          member: baseInfo,
+          rawValue: capital,
+          valueDisplay: formatCurrency(capital),
+          context: `${appliedLots} lots pooled`,
+        });
       }
       if (appliedLots > 0) {
-        mostAppliedLotsRows.push({ member: baseInfo, rawValue: appliedLots, valueDisplay: `${appliedLots} lots`, context: `Across ${ipoCount} IPOs` });
+        mostAppliedLotsRows.push({
+          member: baseInfo,
+          rawValue: appliedLots,
+          valueDisplay: formatLots(appliedLots),
+          context: `Across ${ipoCount} IPOs`,
+        });
       }
       if (maxSingleIpoLots > 0) {
-        highestSingleIpoRows.push({ member: baseInfo, rawValue: maxSingleIpoLots, valueDisplay: `${maxSingleIpoLots} lots`, context: maxSingleIpoName });
+        highestSingleIpoRows.push({
+          member: baseInfo,
+          rawValue: maxSingleIpoLots,
+          valueDisplay: formatLots(maxSingleIpoLots),
+          context: maxSingleIpoName,
+        });
       }
       if (allottedLots > 0) {
-        mostAllottedLotsRows.push({ member: baseInfo, rawValue: allottedLots, valueDisplay: `${allottedLots} lots`, context: `${rate}% strike rate` });
+        mostAllottedLotsRows.push({
+          member: baseInfo,
+          rawValue: allottedLots,
+          valueDisplay: formatLots(allottedLots),
+          context: `${rate}% strike rate`,
+        });
       }
       if (appliedLots >= 1) {
-        highestAllotmentRateRows.push({ member: baseInfo, rawValue: rate, valueDisplay: `${rate}%`, context: `${allottedLots} / ${appliedLots} lots` });
+        highestAllotmentRateRows.push({
+          member: baseInfo,
+          rawValue: rate,
+          valueDisplay: formatPercentage(rate),
+          context: `${allottedLots} / ${appliedLots} lots`,
+        });
       }
       if (ipoCount > 0) {
-        mostOfferingsRows.push({ member: baseInfo, rawValue: ipoCount, valueDisplay: `${ipoCount} IPOs`, context: `${appliedLots} total lots` });
+        mostOfferingsRows.push({
+          member: baseInfo,
+          rawValue: ipoCount,
+          valueDisplay: `${ipoCount} IPOs`,
+          context: `${appliedLots} total lots`,
+        });
       }
     });
 
-    const assignRanks = (arr: any[]): any[] => {
-      arr.sort((a, b) => b.rawValue - a.rawValue);
-      return arr.map((item, idx) => ({ ...item, rank: idx + 1 }));
-    };
+    const secondaryNameSort = (a: any, b: any) =>
+      (a.member?.name || "").localeCompare(b.member?.name || "");
 
-    const pRows = assignRanks(highestProfitRows);
-    const cRows = assignRanks(highestCapitalRows);
-    const aRows = assignRanks(mostAppliedLotsRows);
-    const sRows = assignRanks(highestSingleIpoRows);
-    const alRows = assignRanks(mostAllottedLotsRows);
-    const rRows = assignRanks(highestAllotmentRateRows);
-    const oRows = assignRanks(mostOfferingsRows);
+    const pRows = calculateRankings(highestProfitRows, (r) => r.rawValue, secondaryNameSort);
+    const cRows = calculateRankings(highestCapitalRows, (r) => r.rawValue, secondaryNameSort);
+    const aRows = calculateRankings(mostAppliedLotsRows, (r) => r.rawValue, secondaryNameSort);
+    const sRows = calculateRankings(highestSingleIpoRows, (r) => r.rawValue, secondaryNameSort);
+    const alRows = calculateRankings(mostAllottedLotsRows, (r) => r.rawValue, secondaryNameSort);
+    const rRows = calculateRankings(highestAllotmentRateRows, (r) => r.rawValue, secondaryNameSort);
+    const oRows = calculateRankings(mostOfferingsRows, (r) => r.rawValue, secondaryNameSort);
 
     return [
-      { id: "highest_profit", metricId: "highest_profit", badgeLabel: "HIGHEST PROFIT", title: "Highest Profit", subtitle: "Lifetime distributed earnings from Nexo payouts", accentColor: "emerald", rows: pRows, isEmpty: pRows.length === 0 },
-      { id: "highest_capital", metricId: "highest_capital", badgeLabel: "HIGHEST CAPITAL", title: "Capital Investment", subtitle: "Total pooled funds across solo & split applications", accentColor: "sky", rows: cRows, isEmpty: cRows.length === 0 },
-      { id: "most_applied_lots", metricId: "most_applied_lots", badgeLabel: "MOST APPLIED LOTS", title: "Total Applied Lots", subtitle: "Cumulative lots submitted across all offerings", accentColor: "indigo", rows: aRows, isEmpty: aRows.length === 0 },
-      { id: "highest_single_ipo", metricId: "highest_single_ipo", badgeLabel: "SINGLE IPO RECORD", title: "Single IPO Max Lots", subtitle: "Highest lot count applied for in a single offering", accentColor: "purple", rows: sRows, isEmpty: sRows.length === 0 },
-      { id: "most_allotted_lots", metricId: "most_allotted_lots", badgeLabel: "MOST ALLOTTED LOTS", title: "Total Allotted Lots", subtitle: "Successfully confirmed lot allocations", accentColor: "amber", rows: alRows, isEmpty: alRows.length === 0 },
-      { id: "highest_allotment_rate", metricId: "highest_allotment_rate", badgeLabel: "ALLOTMENT RATE", title: "Allotment Rate %", subtitle: "Allotted lots ÷ applied lots (min. 1 lot)", accentColor: "teal", rows: rRows, isEmpty: rRows.length === 0 },
-      { id: "most_offerings", metricId: "most_offerings", badgeLabel: "SYNDICATE PARTICIPATION", title: "Most IPOs Joined", subtitle: "Distinct IPO syndicates participated in", accentColor: "rose", rows: oRows, isEmpty: oRows.length === 0 },
+      {
+        id: "highest_profit",
+        metricId: "highest_profit",
+        badgeLabel: "HIGHEST PROFIT",
+        title: "Highest Profit",
+        subtitle: "Lifetime distributed earnings from Nexo payouts",
+        accentColor: "emerald",
+        rows: pRows,
+        isEmpty: pRows.length === 0,
+      },
+      {
+        id: "highest_capital",
+        metricId: "highest_capital",
+        badgeLabel: "HIGHEST CAPITAL",
+        title: "Capital Investment",
+        subtitle: "Total pooled funds across solo & split applications",
+        accentColor: "sky",
+        rows: cRows,
+        isEmpty: cRows.length === 0,
+      },
+      {
+        id: "most_applied_lots",
+        metricId: "most_applied_lots",
+        badgeLabel: "MOST APPLIED LOTS",
+        title: "Total Applied Lots",
+        subtitle: "Cumulative lots submitted across all offerings",
+        accentColor: "indigo",
+        rows: aRows,
+        isEmpty: aRows.length === 0,
+      },
+      {
+        id: "highest_single_ipo",
+        metricId: "highest_single_ipo",
+        badgeLabel: "SINGLE IPO RECORD",
+        title: "Single IPO Max Lots",
+        subtitle: "Highest lot count applied for in a single offering",
+        accentColor: "purple",
+        rows: sRows,
+        isEmpty: sRows.length === 0,
+      },
+      {
+        id: "most_allotted_lots",
+        metricId: "most_allotted_lots",
+        badgeLabel: "MOST ALLOTTED LOTS",
+        title: "Total Allotted Lots",
+        subtitle: "Successfully confirmed lot allocations",
+        accentColor: "amber",
+        rows: alRows,
+        isEmpty: alRows.length === 0,
+      },
+      {
+        id: "highest_allotment_rate",
+        metricId: "highest_allotment_rate",
+        badgeLabel: "ALLOTMENT RATE",
+        title: "Allotment Rate %",
+        subtitle: "Allotted lots ÷ applied lots (min. 1 lot)",
+        accentColor: "teal",
+        rows: rRows,
+        isEmpty: rRows.length === 0,
+      },
+      {
+        id: "most_offerings",
+        metricId: "most_offerings",
+        badgeLabel: "SYNDICATE PARTICIPATION",
+        title: "Most IPOs Joined",
+        subtitle: "Distinct IPO syndicates participated in",
+        accentColor: "rose",
+        rows: oRows,
+        isEmpty: oRows.length === 0,
+      },
     ];
   }
 }

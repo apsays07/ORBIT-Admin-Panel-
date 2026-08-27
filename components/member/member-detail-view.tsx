@@ -515,7 +515,7 @@ export function MemberDetailView({ data }: MemberDetailViewProps) {
                 <CardTitle className="text-[14.5px] font-semibold text-zinc-100 flex items-center justify-between">
                   <div className="flex items-center gap-2">
                     <Lock className="h-4 w-4 text-rose-400" />
-                    <span>Security & Credentials</span>
+                    <span>Login Credentials & Security</span>
                   </div>
                   <div className="flex items-center gap-2">
                     <button
@@ -543,37 +543,59 @@ export function MemberDetailView({ data }: MemberDetailViewProps) {
                 </CardTitle>
               </CardHeader>
               <CardContent className="p-4 space-y-3 text-xs text-zinc-300 divide-y divide-zinc-800/60 font-sans">
-                <div className="flex items-center justify-between pt-1">
-                  <span className="text-zinc-500">Current Password</span>
-                  <div className="flex items-center gap-2">
-                    <span className="font-mono text-zinc-200 tracking-widest text-xs">••••••••••••</span>
-                    <span className="px-1.5 py-0.5 rounded bg-emerald-500/10 border border-emerald-500/20 text-[10px] text-emerald-400 font-mono">
-                      Active
+                <div className="flex justify-between pt-1">
+                  <span className="text-zinc-500">Username Handle</span>
+                  <span className="text-zinc-200 font-mono font-medium">@{member.username}</span>
+                </div>
+                <div className="flex justify-between pt-2">
+                  <span className="text-zinc-500">Display Name</span>
+                  <span className="text-zinc-200 font-medium">{member.name}</span>
+                </div>
+                <div className="flex items-center justify-between pt-2">
+                  <span className="text-zinc-500">Password Status</span>
+                  <div className="flex items-center gap-1.5">
+                    <span className="px-2 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-[10.5px] text-emerald-400 font-medium">
+                      Password Configured
                     </span>
                   </div>
                 </div>
-                <div className="flex justify-between pt-2">
-                  <span className="text-zinc-500">Hash Algorithm</span>
-                  <span className="text-zinc-200 font-mono">scrypt (Salted, 64-byte key)</span>
-                </div>
-                <div className="flex justify-between pt-2">
-                  <span className="text-zinc-500">Cryptographic Salt</span>
-                  <span className="text-zinc-200 font-mono">16-byte random salt attached</span>
-                </div>
-                <div className="flex justify-between pt-2">
-                  <span className="text-zinc-500">Last Password Reset</span>
-                  <span className="text-zinc-200 font-mono">
-                    {member.lastPasswordResetAt ? new Date(member.lastPasswordResetAt).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" }) : "Initial Setup"}
+                <div className="flex items-center justify-between pt-2">
+                  <span className="text-zinc-500">Login Access</span>
+                  <span className={cn(
+                    "px-2 py-0.5 rounded-full text-[10.5px] font-medium",
+                    currentStatus === "ACTIVE"
+                      ? "bg-emerald-500/10 border border-emerald-500/20 text-emerald-400"
+                      : "bg-rose-500/10 border border-rose-500/20 text-rose-400"
+                  )}>
+                    {currentStatus === "ACTIVE" ? "Login Enabled" : "Login Disabled"}
                   </span>
                 </div>
                 <div className="flex justify-between pt-2">
-                  <span className="text-zinc-500">Account Registered</span>
+                  <span className="text-zinc-500">Hashing Standard</span>
+                  <span className="text-zinc-200 font-mono">PBKDF2-HMAC-SHA512 (100k iter)</span>
+                </div>
+                <div className="flex justify-between pt-2">
+                  <span className="text-zinc-500">Last Password Updated</span>
+                  <span className="text-zinc-200 font-mono">
+                    {member.passwordUpdatedAt || member.lastPasswordResetAt
+                      ? new Date(member.passwordUpdatedAt || member.lastPasswordResetAt!).toLocaleString("en-IN", {
+                          day: "2-digit",
+                          month: "short",
+                          year: "numeric",
+                          hour: "2-digit",
+                          minute: "2-digit",
+                        })
+                      : "Initial Setup"}
+                  </span>
+                </div>
+                <div className="flex justify-between pt-2">
+                  <span className="text-zinc-500">Account Created</span>
                   <span className="text-zinc-200 font-mono">
                     {member.createdAt ? new Date(member.createdAt).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" }) : "N/A"}
                   </span>
                 </div>
                 <div className="pt-2.5 text-[11px] text-zinc-500 leading-relaxed">
-                  🔒 Passwords are cryptographically salted and hashed. Plaintext passwords are never retrievable or stored in the database.
+                  🔒 Passwords are cryptographically salted and hashed. Plaintext passwords cannot be viewed or retrieved.
                 </div>
               </CardContent>
             </Card>

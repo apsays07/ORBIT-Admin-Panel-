@@ -38,6 +38,9 @@ export interface MemberData {
   createdAt?: string;
   updatedAt?: string;
   lastPasswordResetAt?: string;
+  passwordUpdatedAt?: string;
+  hasPassword?: boolean;
+  mustChangePassword?: boolean;
 
   // Security (protected on server, optional for client)
   passwordHash?: string;

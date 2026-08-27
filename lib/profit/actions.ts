@@ -6,6 +6,16 @@ import { getDatabase } from "@/lib/db/mongodb";
 import { ApplicationRecord } from "@/types/application";
 import { NexoIPORecord, ProfitDistribution, MemberPayout } from "@/types/ipo";
 
+import {
+  calculatePerLotProfit,
+  calculateMemberPayoutProfit,
+  calculateLotsFromContribution,
+  calculateApplicationPanCount,
+  safeAdd,
+  normalizeNumeric,
+  reconcileProfitDistribution,
+} from "@/lib/calculations";
+
 export interface ProfitIpoOption {
   id: string;
   name: string;
@@ -112,20 +122,21 @@ export async function publishProfitDistribution(
 
     let totalLots = 0;
     appDocs.forEach((app) => {
-      totalLots += (app.numberOfPanCards || 1);
+      const panCount = calculateApplicationPanCount(app.panNumbers, app.numberOfPanCards);
+      totalLots = safeAdd(totalLots, panCount);
       if (app.contributors && app.contributors.length > 0) {
         app.contributors.forEach((c) => {
           const existing = memberMap.get(c.memberId);
           const nameFormatted = c.memberName.startsWith("@") ? c.memberName : `@${c.memberName}`;
           const panNumber = app.panNumbers?.[0] || "—";
           if (existing) {
-            existing.contribution += c.amount;
+            existing.contribution = safeAdd(existing.contribution, c.amount);
           } else {
             memberMap.set(c.memberId, {
               memberId: c.memberId,
               name: nameFormatted,
               pan: panNumber,
-              contribution: c.amount,
+              contribution: normalizeNumeric(c.amount, 0),
             });
           }
         });
@@ -135,27 +146,25 @@ export async function publishProfitDistribution(
         const nameFormatted = app.applicantName.startsWith("@") ? app.applicantName : `@${app.applicantName}`;
         const panNumber = app.panNumbers?.[0] || "—";
         if (existing) {
-          existing.contribution += app.totalContribution;
+          existing.contribution = safeAdd(existing.contribution, app.totalContribution);
         } else {
           memberMap.set(memId, {
             memberId: memId,
             name: nameFormatted,
             pan: panNumber,
-            contribution: app.totalContribution,
+            contribution: normalizeNumeric(app.totalContribution, 0),
           });
         }
       }
     });
 
-    const minInvest = (ipo.metrics?.minInvestment && ipo.metrics.minInvestment > 0)
-      ? ipo.metrics.minInvestment
-      : 1;
-    const oneLotProfit = totalLots > 0 ? Math.floor(realizedProfit / totalLots) : 0;
+    const minInvest = normalizeNumeric(ipo.metrics?.minInvestment, 15000);
+    const oneLotProfit = calculatePerLotProfit(realizedProfit, totalLots);
 
     const memberPayouts: MemberPayout[] = [];
     memberMap.forEach((val) => {
-      const lots = minInvest > 0 ? (val.contribution / minInvest) : 1;
-      const profit = Math.round(lots * oneLotProfit);
+      const lots = calculateLotsFromContribution(val.contribution, minInvest);
+      const profit = calculateMemberPayoutProfit(lots, oneLotProfit);
       memberPayouts.push({
         memberId: val.memberId,
         name: val.name,
@@ -165,6 +174,12 @@ export async function publishProfitDistribution(
         profit,
       });
     });
+
+    // Reconcile distribution
+    const reconciliation = reconcileProfitDistribution(realizedProfit, memberPayouts);
+    if (!reconciliation.isValid) {
+      console.warn(`[PROFIT RECONCILIATION] ${reconciliation.details}`);
+    }
 
     const nowIso = new Date().toISOString();
 

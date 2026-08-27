@@ -29,6 +29,8 @@ import {
   User,
   Users,
 } from "lucide-react";
+import { useModalKeyboardShortcuts } from "@/lib/hooks/use-keyboard-shortcuts";
+import { KbdEnter, KbdEsc } from "@/components/ui/kbd";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { MemberAvatar } from "@/components/ui/member-avatar";
@@ -89,6 +91,13 @@ export function EditApplicationModal({
   const [contributors, setContributors] = useState<ApplicationContributor[]>(
     application?.contributors || []
   );
+
+  // Keyboard shortcut handling
+  useModalKeyboardShortcuts({
+    isOpen,
+    onClose,
+    isSubmitting,
+  });
 
   // Reset form whenever active application changes
   useEffect(() => {
@@ -291,28 +300,25 @@ export function EditApplicationModal({
     <div
       role="dialog"
       aria-modal="true"
-      className="fixed inset-0 z-[9999] bg-black/80 backdrop-blur-md flex items-center justify-center p-4 sm:p-6 animate-in fade-in duration-150 font-sans"
+      className="fixed inset-0 z-[9999] bg-black/80 backdrop-blur-xs flex items-center justify-center p-4 sm:p-6 animate-in fade-in duration-150 font-sans"
     >
-      <div className="relative w-full max-w-2xl max-h-[90vh] bg-zinc-950/95 border border-zinc-800/90 rounded-3xl shadow-[0_25px_70px_rgba(0,0,0,0.9)] text-zinc-100 flex flex-col backdrop-blur-xl overflow-hidden my-auto">
-        {/* Ambient Top Line */}
-        <div className="absolute top-0 inset-x-0 h-[2px] bg-gradient-to-r from-transparent via-amber-500/60 to-transparent" />
-
+      <div className="relative w-full max-w-2xl max-h-[90vh] bg-zinc-950 border border-zinc-800 rounded-xl shadow-2xl text-zinc-100 flex flex-col overflow-hidden my-auto">
         {/* Header */}
-        <div className="px-6 py-4 flex items-center justify-between border-b border-zinc-900 shrink-0">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-2xl bg-amber-500/10 border border-amber-500/20 text-amber-400 flex items-center justify-center shrink-0">
-              <Edit2 className="h-4 w-4" />
+        <div className="px-5 py-3.5 flex items-center justify-between border-b border-zinc-800 bg-zinc-900/40 shrink-0">
+          <div className="flex items-center gap-2.5">
+            <div className="h-7 w-7 rounded-md bg-zinc-800 border border-zinc-700 text-zinc-300 flex items-center justify-center shrink-0">
+              <Edit2 className="h-3.5 w-3.5" />
             </div>
             <div>
-              <div className="flex items-center gap-2">
-                <span className="text-[10.5px] font-semibold tracking-wider px-2 py-0.5 rounded-md bg-amber-500/10 text-amber-400 border border-amber-500/20 font-mono uppercase">
-                  EDIT RECORD
+              <div className="flex items-center gap-1.5">
+                <h2 className="text-sm font-semibold text-zinc-100 tracking-tight">
+                  Edit Application Details
+                </h2>
+                <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-zinc-800 text-zinc-400 border border-zinc-700">
+                  {application.id}
                 </span>
-                <span className="text-xs text-zinc-400 font-mono">{application.id}</span>
               </div>
-              <h2 className="text-[18px] font-semibold text-zinc-100 tracking-tight">
-                Edit Application Details
-              </h2>
+              <p className="text-[11px] text-zinc-500">Update investor allocation, PAN card, or split funding structure</p>
             </div>
           </div>
 
@@ -320,7 +326,7 @@ export function EditApplicationModal({
             type="button"
             onClick={onClose}
             disabled={isSubmitting}
-            className="p-2 rounded-xl text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800/80 border border-transparent hover:border-zinc-700/60 transition-all cursor-pointer"
+            className="p-1 rounded-md text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800 transition-colors cursor-pointer"
           >
             <X className="h-4 w-4" />
           </button>
@@ -328,11 +334,11 @@ export function EditApplicationModal({
 
         {/* Form Body */}
         <form onSubmit={handleSubmit} className="flex flex-col flex-1 overflow-hidden">
-          <div className="p-6 space-y-4.5 overflow-y-auto flex-1">
+          <div className="p-5 space-y-3.5 overflow-y-auto flex-1">
             {/* Error Banner */}
             {formError && (
-              <div className="p-3.5 rounded-2xl bg-rose-950/40 border border-rose-900/60 text-rose-300 text-xs flex items-center gap-2.5 font-medium">
-                <AlertCircle className="h-4 w-4 shrink-0 text-rose-400" />
+              <div className="p-2.5 rounded-md bg-rose-950/30 border border-rose-800/50 text-rose-300 text-xs flex items-center gap-2 font-medium">
+                <AlertCircle className="h-3.5 w-3.5 shrink-0 text-rose-400" />
                 <span>{formError}</span>
               </div>
             )}
@@ -590,33 +596,27 @@ export function EditApplicationModal({
           </div>
 
           {/* Modal Footer */}
-          <div className="px-6 py-4 border-t border-zinc-900 flex items-center justify-between shrink-0 bg-zinc-950">
+          <div className="px-5 py-3 border-t border-zinc-800 flex items-center justify-between shrink-0 bg-zinc-900/40">
             <Button
               type="button"
               variant="outline"
               onClick={onClose}
               disabled={isSubmitting}
-              className="h-10 px-5 text-xs font-medium border-zinc-800 bg-zinc-900/80 hover:bg-zinc-800 text-zinc-300 rounded-xl cursor-pointer"
+              className="h-8 px-3 text-xs font-medium border-zinc-800 text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800 rounded-md cursor-pointer transition-colors flex items-center gap-2"
             >
-              Cancel
+              <span>Cancel</span>
+              <KbdEsc />
             </Button>
 
             <Button
               type="submit"
               disabled={isSubmitting || loadingOptions}
-              className="h-10 px-6 text-xs font-semibold bg-amber-500 hover:bg-amber-400 text-zinc-950 rounded-xl shadow-lg shadow-amber-500/20 flex items-center gap-2 cursor-pointer transition-all"
+              isLoading={isSubmitting}
+              loadingText="Saving Changes..."
+              className="h-8 min-w-[150px] px-4 text-xs font-medium bg-zinc-100 hover:bg-white text-zinc-950 rounded-md flex items-center justify-center gap-1.5 cursor-pointer transition-colors active:scale-95"
             >
-              {isSubmitting ? (
-                <>
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                  <span>Saving Changes...</span>
-                </>
-              ) : (
-                <>
-                  <Check className="h-4 w-4" />
-                  <span>Save Application</span>
-                </>
-              )}
+              <span>Save Application</span>
+              <KbdEnter className="bg-zinc-200 border-zinc-300 text-zinc-900" />
             </Button>
           </div>
         </form>

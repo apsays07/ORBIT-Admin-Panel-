@@ -25,6 +25,8 @@ import {
   Users,
   Layers,
 } from "lucide-react";
+import { useModalKeyboardShortcuts } from "@/lib/hooks/use-keyboard-shortcuts";
+import { KbdEnter, KbdEsc } from "@/components/ui/kbd";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { MemberSelectDropdown } from "@/components/ui/member-select-dropdown";
@@ -84,6 +86,13 @@ export function CreateSoloApplicationsModal({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
 
+  // Keyboard and focus lifecycle handling
+  useModalKeyboardShortcuts({
+    isOpen,
+    onClose,
+    isSubmitting,
+  });
+
   // Fetch real database members and IPOs on open
   useEffect(() => {
     if (!isOpen) return;
@@ -121,17 +130,6 @@ export function CreateSoloApplicationsModal({
       isMounted = false;
     };
   }, [isOpen, defaultIpoId]);
-
-  // Keyboard Escape listener
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "Escape" && isOpen && !isSubmitting) {
-        onClose();
-      }
-    };
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [isOpen, isSubmitting, onClose]);
 
   const selectedIpo = ipos.find((i) => i.id === selectedIpoId);
   const defaultIpoAmount = selectedIpo?.minInvestment ? String(selectedIpo.minInvestment) : "15000";
@@ -618,38 +616,30 @@ export function CreateSoloApplicationsModal({
     <div
       role="dialog"
       aria-modal="true"
-      className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-4 sm:p-6 animate-in fade-in duration-150 font-sans"
+      className="fixed inset-0 z-50 bg-black/80 backdrop-blur-xs flex items-center justify-center p-4 sm:p-6 animate-in fade-in duration-150 font-sans"
     >
-      <div className="relative w-full max-w-4xl h-[680px] max-h-[90vh] bg-zinc-950/95 border border-zinc-800/90 rounded-3xl shadow-[0_25px_70px_rgba(0,0,0,0.9)] text-zinc-100 flex flex-col backdrop-blur-xl overflow-hidden">
-        {/* Ambient Top Glow */}
-        <div className="absolute top-0 inset-x-0 h-[2px] bg-gradient-to-r from-transparent via-blue-500/60 to-transparent" />
-
+      <div className="relative w-full max-w-4xl h-[680px] max-h-[90vh] bg-zinc-950 border border-zinc-800 rounded-xl shadow-2xl text-zinc-100 flex flex-col overflow-hidden">
         {/* Modal Header with Mode Selector */}
-        <div className="px-6 py-4.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-zinc-900 shrink-0">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-2xl bg-blue-500/10 border border-blue-500/20 text-blue-400 flex items-center justify-center shrink-0">
-              {fundingMode === "SOLO" ? <Plus className="h-5 w-5" /> : <Users className="h-5 w-5 text-blue-400" />}
+        <div className="px-5 py-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-zinc-800 bg-zinc-900/40 shrink-0">
+          <div className="flex items-center gap-2.5">
+            <div className="h-7 w-7 rounded-md bg-zinc-800 border border-zinc-700 text-zinc-300 flex items-center justify-center shrink-0">
+              {fundingMode === "SOLO" ? <Plus className="h-3.5 w-3.5" /> : <Users className="h-3.5 w-3.5 text-zinc-300" />}
             </div>
             <div>
-              <div className="flex items-center gap-2">
-                <span className="text-[10.5px] font-semibold tracking-wider px-2 py-0.5 rounded-md bg-blue-500/10 text-blue-400 border border-blue-500/20 font-mono uppercase">
-                  {fundingMode === "SOLO" ? "BATCH ACTION" : "MULTI-FRIEND"}
-                </span>
-                <span className="text-xs text-zinc-400 font-sans">
-                  {fundingMode === "SOLO" ? "Multi-Entry Filing" : "Batch Multi-Friend Filing"}
-                </span>
-              </div>
-              <h2 className="text-[19px] font-semibold text-zinc-100 tracking-tight">
+              <h2 className="text-sm font-semibold text-zinc-100 tracking-tight">
                 {fundingMode === "SOLO"
                   ? "Create Solo Applications"
                   : `Create Multi-Friend Applications (${multiApps.length})`}
               </h2>
+              <p className="text-[11px] text-zinc-500">
+                {fundingMode === "SOLO" ? "Multi-Entry batch filing" : "Syndicate pooled applications with split funding"}
+              </p>
             </div>
           </div>
 
-          <div className="flex items-center gap-2.5 self-end sm:self-center">
+          <div className="flex items-center gap-2 self-end sm:self-center">
             {/* Symmetrical Mode Switcher Tabs */}
-            <div className="grid grid-cols-2 p-1 rounded-xl bg-zinc-900 border border-zinc-800 text-xs w-[260px] shrink-0">
+            <div className="grid grid-cols-2 p-0.5 rounded-md bg-zinc-900 border border-zinc-800 text-xs w-[240px] shrink-0">
               <button
                 type="button"
                 onClick={() => {
@@ -657,14 +647,14 @@ export function CreateSoloApplicationsModal({
                   setFormError(null);
                 }}
                 className={cn(
-                  "h-8.5 rounded-lg font-medium transition-all flex items-center justify-center gap-1.5 cursor-pointer text-xs",
+                  "h-7 rounded text-xs font-medium transition-colors flex items-center justify-center gap-1.5 cursor-pointer",
                   fundingMode === "SOLO"
-                    ? "bg-blue-600 text-white shadow-xs font-semibold"
-                    : "text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/40"
+                    ? "bg-zinc-800 text-zinc-100 font-medium border border-zinc-700/80 shadow-xs"
+                    : "text-zinc-400 hover:text-zinc-200"
                 )}
               >
-                <User className="h-3.5 w-3.5" />
-                <span>Solo (Batch)</span>
+                <User className="h-3 w-3" />
+                <span>Solo Batch</span>
               </button>
               <button
                 type="button"
@@ -673,13 +663,13 @@ export function CreateSoloApplicationsModal({
                   setFormError(null);
                 }}
                 className={cn(
-                  "h-8.5 rounded-lg font-medium transition-all flex items-center justify-center gap-1.5 cursor-pointer text-xs",
+                  "h-7 rounded text-xs font-medium transition-colors flex items-center justify-center gap-1.5 cursor-pointer",
                   fundingMode === "MULTI_FRIEND"
-                    ? "bg-blue-600 text-white shadow-xs font-semibold"
-                    : "text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/40"
+                    ? "bg-zinc-800 text-zinc-100 font-medium border border-zinc-700/80 shadow-xs"
+                    : "text-zinc-400 hover:text-zinc-200"
                 )}
               >
-                <Users className="h-3.5 w-3.5" />
+                <Users className="h-3 w-3" />
                 <span>Multi-Friend</span>
               </button>
             </div>
@@ -687,8 +677,7 @@ export function CreateSoloApplicationsModal({
             <button
               type="button"
               onClick={onClose}
-              disabled={isSubmitting}
-              className="p-2 rounded-xl text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800/80 border border-transparent hover:border-zinc-700/60 transition-all cursor-pointer ml-1"
+              className="p-1 rounded-md text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800 transition-colors cursor-pointer"
             >
               <X className="h-4 w-4" />
             </button>
@@ -1057,40 +1046,38 @@ export function CreateSoloApplicationsModal({
           </div>
 
           {/* Modal Footer */}
-          <div className="px-6 py-4 border-t border-zinc-900 flex items-center justify-between shrink-0 bg-zinc-950">
+          <div className="px-5 py-3 border-t border-zinc-800 flex items-center justify-between shrink-0 bg-zinc-900/40">
             <Button
               type="button"
               variant="outline"
               onClick={onClose}
               disabled={isSubmitting}
-              className="h-10 px-5 text-xs font-medium border-zinc-800 bg-zinc-900/80 hover:bg-zinc-800 text-zinc-300 rounded-xl cursor-pointer"
+              className="h-8 px-3 text-xs font-medium border-zinc-800 text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800 rounded-md cursor-pointer transition-colors flex items-center gap-2"
             >
-              Cancel
+              <span>Cancel</span>
+              <KbdEsc />
             </Button>
 
             <Button
               type="submit"
               disabled={isSubmitting || loadingData}
-              className="h-10 px-6 text-xs font-semibold bg-blue-600 hover:bg-blue-500 text-white rounded-xl shadow-lg shadow-blue-600/20 flex items-center gap-2 cursor-pointer transition-all"
+              isLoading={isSubmitting}
+              loadingText="Creating Applications..."
+              className="h-8 min-w-[180px] px-4 text-xs font-medium bg-zinc-100 hover:bg-white text-zinc-950 rounded-md flex items-center justify-center gap-1.5 cursor-pointer transition-colors active:scale-95"
             >
-              {isSubmitting ? (
+              {fundingMode === "SOLO" ? (
                 <>
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                  <span>Creating Applications...</span>
-                </>
-              ) : fundingMode === "SOLO" ? (
-                <>
-                  <CheckCircle2 className="h-4 w-4" />
                   <span>
                     Create {soloRows.length} Solo {soloRows.length === 1 ? "Application" : "Applications"}
                   </span>
+                  <KbdEnter className="bg-zinc-200 border-zinc-300 text-zinc-900" />
                 </>
               ) : (
                 <>
-                  <CheckCircle2 className="h-4 w-4" />
                   <span>
                     Create {multiApps.length} Multi-Friend {multiApps.length === 1 ? "Application" : "Applications"}
                   </span>
+                  <KbdEnter className="bg-zinc-200 border-zinc-300 text-zinc-900" />
                 </>
               )}
             </Button>

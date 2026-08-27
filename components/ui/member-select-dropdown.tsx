@@ -4,6 +4,7 @@ import React, { useState, useRef, useEffect } from "react";
 import { MemberOption } from "@/lib/application/actions";
 import { MemberAvatar } from "@/components/ui/member-avatar";
 import { Search, ChevronDown, Check, User, X } from "lucide-react";
+import { useDropdownKeyboard } from "@/lib/hooks/use-keyboard-shortcuts";
 import { cn } from "@/lib/utils";
 
 interface MemberSelectDropdownProps {
@@ -30,6 +31,34 @@ export function MemberSelectDropdown({
 
   const selectedMember = members.find((m) => m.id === value);
 
+  // Filter members list based on query
+  const filteredMembers = members.filter((m) => {
+    if (!search.trim()) return true;
+    const q = search.toLowerCase().trim();
+    const cleanUsername = (m.username || "").toLowerCase().replace(/^@/, "");
+    const cleanName = (m.name || "").toLowerCase();
+    const pan = (m.panFull || m.panMasked || "").toLowerCase();
+    return (
+      cleanUsername.includes(q) ||
+      cleanName.includes(q) ||
+      pan.includes(q) ||
+      m.id.toLowerCase().includes(q)
+    );
+  });
+
+  const { highlightedIndex, handleKeyDown } = useDropdownKeyboard({
+    isOpen,
+    itemCount: filteredMembers.length,
+    onSelect: (index: number) => {
+      const chosen = filteredMembers[index];
+      if (chosen) {
+        onChange(chosen.id);
+        setIsOpen(false);
+      }
+    },
+    onClose: () => setIsOpen(false),
+  });
+
   // Close when clicking outside
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
@@ -53,20 +82,6 @@ export function MemberSelectDropdown({
       setSearch("");
     }
   }, [isOpen]);
-
-  const filteredMembers = members.filter((m) => {
-    if (!search.trim()) return true;
-    const q = search.toLowerCase().trim();
-    const cleanUsername = (m.username || "").toLowerCase().replace(/^@/, "");
-    const cleanName = (m.name || "").toLowerCase();
-    const pan = (m.panFull || m.panMasked || "").toLowerCase();
-    return (
-      cleanUsername.includes(q) ||
-      cleanName.includes(q) ||
-      pan.includes(q) ||
-      m.id.toLowerCase().includes(q)
-    );
-  });
 
   return (
     <div ref={containerRef} className={cn("relative w-full", className)}>
@@ -127,6 +142,7 @@ export function MemberSelectDropdown({
               type="text"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
+              onKeyDown={handleKeyDown}
               placeholder="Search member or @username..."
               className="flex-1 bg-transparent text-xs text-zinc-100 placeholder:text-zinc-500 focus:outline-hidden"
             />
@@ -148,8 +164,9 @@ export function MemberSelectDropdown({
                 No matching members found
               </div>
             ) : (
-              filteredMembers.map((m) => {
+              filteredMembers.map((m, idx) => {
                 const isSelected = m.id === value;
+                const isHighlighted = highlightedIndex === idx;
                 return (
                   <button
                     key={m.id}
@@ -162,6 +179,8 @@ export function MemberSelectDropdown({
                       "w-full px-2.5 py-2 rounded-xl flex items-center justify-between gap-3 text-left transition-colors cursor-pointer group",
                       isSelected
                         ? "bg-blue-950/40 text-blue-200 border border-blue-500/20"
+                        : isHighlighted
+                        ? "bg-zinc-800/90 text-zinc-100 ring-1 ring-zinc-700"
                         : "hover:bg-zinc-900/80 text-zinc-300 hover:text-zinc-100"
                     )}
                   >

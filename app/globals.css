@@ -146,3 +146,74 @@ input[type="number"] {
   -moz-appearance: textfield;
   appearance: textfield;
 }
+
+/* Micro-Interactions & Subtleties */
+.interactive-card {
+  transition: transform 0.18s cubic-bezier(0.16, 1, 0.3, 1),
+              border-color 0.18s ease-out,
+              background-color 0.18s ease-out,
+              box-shadow 0.18s ease-out;
+}
+
+.interactive-card:hover {
+  transform: translateY(-1px);
+  border-color: rgba(63, 63, 70, 0.9);
+  background-color: rgba(24, 24, 27, 0.95);
+  box-shadow: 0 4px 12px -2px rgba(0, 0, 0, 0.4);
+}
+
+.interactive-row {
+  transition: background-color 0.12s ease-out;
+}
+
+.interactive-row:hover {
+  background-color: rgba(39, 39, 42, 0.45);
+}
+
+.interactive-row:active {
+  background-color: rgba(39, 39, 42, 0.7);
+}
+
+/* Tabular count transition helper */
+.count-transition {
+  display: inline-block;
+  font-variant-numeric: tabular-nums;
+  transition: opacity 0.15s ease-out, transform 0.15s ease-out;
+}
+
+/* Custom Minimalist Dark Scrollbars */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(113, 113, 122, 0.25);
+  border-radius: 9999px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(113, 113, 122, 0.45);
+}
+
+/* Reduced Motion Mode */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+    transform: none !important;
+  }
+
+  .interactive-card:hover {
+    transform: none !important;
+  }
+}
+

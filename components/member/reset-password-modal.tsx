@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { MemberData } from "@/types/member";
 import { resetMemberPassword } from "@/lib/member/actions";
 import { useToast } from "@/components/ui/toast";
@@ -22,6 +22,8 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { MemberAvatar } from "@/components/ui/member-avatar";
+import { useModalKeyboardShortcuts } from "@/lib/hooks/use-keyboard-shortcuts";
+import { KbdEnter, KbdEsc } from "@/components/ui/kbd";
 import { cn } from "@/lib/utils";
 
 interface ResetPasswordModalProps {
@@ -58,9 +60,11 @@ export function ResetPasswordModal({
   initialMode = "manual",
 }: ResetPasswordModalProps) {
   const toast = useToast();
+  const passwordInputRef = useRef<HTMLInputElement | null>(null);
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
+  const [mustChangePassword, setMustChangePassword] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [feedback, setFeedback] = useState<{ type: "success" | "error"; message: string } | null>(null);
 
@@ -69,11 +73,19 @@ export function ResetPasswordModal({
   const [revealUpdatedPassword, setRevealUpdatedPassword] = useState(false);
   const [isCopied, setIsCopied] = useState(false);
 
+  useModalKeyboardShortcuts({
+    isOpen,
+    onClose,
+    isSubmitting,
+    initialFocusRef: passwordInputRef,
+  });
+
   useEffect(() => {
     if (isOpen) {
       setNewPassword("");
       setConfirmPassword("");
       setShowPassword(false);
+      setMustChangePassword(Boolean(member?.mustChangePassword));
       setFeedback(null);
       setUpdatedSuccessPassword(null);
       setRevealUpdatedPassword(false);
@@ -83,7 +95,7 @@ export function ResetPasswordModal({
         handleGeneratePassword();
       }
     }
-  }, [isOpen, initialMode]);
+  }, [isOpen, initialMode, member]);
 
   if (!isOpen || !member) return null;
 
@@ -145,7 +157,7 @@ export function ResetPasswordModal({
     }
 
     setIsSubmitting(true);
-    const res = await resetMemberPassword(member.id, cleanPass);
+    const res = await resetMemberPassword(member.id, cleanPass, mustChangePassword);
     setIsSubmitting(false);
 
     if (res.success) {
@@ -161,18 +173,18 @@ export function ResetPasswordModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-xs animate-in fade-in-50 font-sans">
-      <div className="w-full max-w-md bg-zinc-950 border border-zinc-800 rounded-3xl p-6 space-y-5 shadow-2xl text-zinc-100">
+      <div className="w-full max-w-md bg-zinc-950 border border-zinc-800 rounded-xl p-5 space-y-4 shadow-2xl text-zinc-100">
         {/* Modal Header */}
         <div className="flex items-start justify-between">
-          <div className="flex items-center gap-3">
-            <div className="h-10 w-10 rounded-2xl bg-rose-500/10 border border-rose-500/20 text-rose-400 flex items-center justify-center shrink-0">
-              <KeyRound className="h-5 w-5" />
+          <div className="flex items-center gap-2.5">
+            <div className="h-7 w-7 rounded-md bg-zinc-800 border border-zinc-700 text-zinc-300 flex items-center justify-center shrink-0">
+              <KeyRound className="h-4 w-4" />
             </div>
             <div>
-              <h3 className="text-[16px] font-semibold text-zinc-100 tracking-tight">
+              <h3 className="text-sm font-semibold text-zinc-100 tracking-tight">
                 {updatedSuccessPassword ? "Password Updated" : "Reset Member Password"}
               </h3>
-              <p className="text-xs text-zinc-400">
+              <p className="text-[11px] text-zinc-500">
                 {updatedSuccessPassword ? "Share credential with member" : "Set or generate new encrypted login credentials"}
               </p>
             </div>
@@ -181,22 +193,22 @@ export function ResetPasswordModal({
           <button
             type="button"
             onClick={onClose}
-            className="p-1 rounded-xl text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800 transition-colors cursor-pointer"
+            className="p-1 rounded-md text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800 transition-colors cursor-pointer"
           >
             <X className="h-4 w-4" />
           </button>
         </div>
 
         {/* Member Profile Banner */}
-        <div className="p-3 rounded-2xl bg-zinc-900/60 border border-zinc-800 flex items-center gap-3">
+        <div className="p-2.5 rounded-lg bg-zinc-900 border border-zinc-800 flex items-center gap-2.5">
           <MemberAvatar
             src={member.avatar}
             name={member.name}
-            className="h-9 w-9 rounded-xl border border-zinc-800 text-xs shrink-0"
+            className="h-8 w-8 rounded-md border border-zinc-800 text-xs shrink-0"
           />
           <div className="min-w-0 flex-1">
-            <div className="flex items-center gap-2">
-              <span className="text-xs font-semibold text-zinc-100 truncate">{member.name}</span>
+            <div className="flex items-center gap-1.5">
+              <span className="text-xs font-medium text-zinc-100 truncate">{member.name}</span>
               <span className="text-[11px] font-mono text-zinc-400">@{member.username}</span>
             </div>
             <p className="text-[10.5px] text-zinc-500 font-mono">ID: {member.id}</p>
@@ -205,27 +217,27 @@ export function ResetPasswordModal({
 
         {/* POST-UPDATE TEMPORARY REVEAL VIEW */}
         {updatedSuccessPassword ? (
-          <div className="space-y-4 pt-1">
-            <div className="p-4 rounded-2xl bg-emerald-950/20 border border-emerald-800/40 space-y-3">
-              <div className="flex items-center gap-2 text-emerald-400 text-xs font-semibold">
-                <CheckCircle2 className="h-4 w-4" />
+          <div className="space-y-3 pt-0.5">
+            <div className="p-3.5 rounded-lg bg-zinc-900 border border-emerald-900/50 space-y-2.5">
+              <div className="flex items-center gap-1.5 text-emerald-400 text-xs font-medium">
+                <CheckCircle2 className="h-3.5 w-3.5" />
                 <span>Password Updated Successfully</span>
               </div>
 
-              <div className="p-3 rounded-xl bg-zinc-950 border border-zinc-800 flex items-center justify-between gap-3">
+              <div className="p-2.5 rounded-md bg-zinc-950 border border-zinc-800 flex items-center justify-between gap-2">
                 <div className="font-mono text-xs text-zinc-100 tracking-wider select-all break-all">
                   {revealUpdatedPassword
                     ? updatedSuccessPassword
                     : "•".repeat(Math.min(updatedSuccessPassword.length, 14))}
                 </div>
 
-                <div className="flex items-center gap-1.5 shrink-0">
+                <div className="flex items-center gap-1 shrink-0">
                   <Button
                     type="button"
                     variant="ghost"
                     size="sm"
                     onClick={() => setRevealUpdatedPassword(!revealUpdatedPassword)}
-                    className="h-7 px-2 text-xs text-zinc-400 hover:text-white rounded-lg"
+                    className="h-7 px-2 text-xs text-zinc-400 hover:text-white rounded-md"
                   >
                     {revealUpdatedPassword ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
                   </Button>
@@ -234,7 +246,7 @@ export function ResetPasswordModal({
                     type="button"
                     size="sm"
                     onClick={() => handleCopyPassword(updatedSuccessPassword)}
-                    className="h-7 px-2.5 text-xs bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg flex items-center gap-1 cursor-pointer"
+                    className="h-7 px-2.5 text-xs bg-zinc-100 hover:bg-white text-zinc-950 font-medium rounded-md flex items-center gap-1 cursor-pointer"
                   >
                     {isCopied ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
                     <span>{isCopied ? "Copied" : "Copy"}</span>
@@ -242,16 +254,16 @@ export function ResetPasswordModal({
                 </div>
               </div>
 
-              <p className="text-[11px] text-zinc-400 leading-relaxed font-sans">
-                🔒 <span className="font-medium text-zinc-300">Security Note:</span> Once you close this modal, this plaintext password will no longer be stored or retrievable anywhere in the system.
+              <p className="text-[11px] text-zinc-500 leading-normal font-sans">
+                🔒 Plaintext password will not be displayed again once closed.
               </p>
             </div>
 
-            <div className="flex items-center justify-end pt-2">
+            <div className="flex items-center justify-end pt-1">
               <Button
                 type="button"
                 onClick={onClose}
-                className="text-xs font-semibold bg-zinc-800 hover:bg-zinc-700 text-zinc-100 rounded-xl px-5 h-9"
+                className="text-xs font-medium bg-zinc-100 hover:bg-white text-zinc-950 rounded-md px-4 h-8"
               >
                 Done
               </Button>
@@ -259,51 +271,52 @@ export function ResetPasswordModal({
           </div>
         ) : (
           /* PASSWORD FORM VIEW */
-          <form onSubmit={handleSubmit} className="space-y-4">
+          <form onSubmit={handleSubmit} className="space-y-3.5">
             {/* Quick Generator Button */}
             <div className="flex items-center justify-between pt-0.5">
               <span className="text-xs font-medium text-zinc-400">Password Controls</span>
               <button
                 type="button"
                 onClick={handleGeneratePassword}
-                className="text-xs text-rose-400 hover:text-rose-300 font-medium flex items-center gap-1.5 cursor-pointer"
+                className="text-xs text-zinc-300 hover:text-white font-medium flex items-center gap-1.5 cursor-pointer bg-zinc-800 hover:bg-zinc-700 px-2 py-0.5 rounded-md border border-zinc-700 transition-colors"
               >
-                <Sparkles className="h-3.5 w-3.5" />
-                <span>Generate Secure Password</span>
+                <Sparkles className="h-3 w-3 text-zinc-400" />
+                <span>Generate Secure</span>
               </button>
             </div>
 
             {/* New Password Input */}
-            <div className="space-y-1.5">
+            <div className="space-y-1">
               <label className="text-xs font-medium text-zinc-300 block">
                 New Password
               </label>
               <div className="relative">
                 <Input
+                  ref={passwordInputRef}
                   type={showPassword ? "text" : "password"}
                   value={newPassword}
                   onChange={(e) => setNewPassword(e.target.value)}
-                  placeholder="Enter new password or click Generate"
+                  placeholder="Enter new password (min 6 chars)"
                   disabled={isSubmitting}
-                  className="pr-10 h-10 bg-zinc-900 border-zinc-800 text-xs font-mono text-zinc-100 rounded-xl focus-visible:ring-rose-500"
+                  className="pr-9 h-9 bg-zinc-900 border-zinc-800 text-xs font-mono text-zinc-100 rounded-md focus-visible:ring-zinc-700"
                 />
                 <button
                   type="button"
                   onClick={() => setShowPassword(!showPassword)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-500 hover:text-zinc-200 cursor-pointer"
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-zinc-500 hover:text-zinc-300 cursor-pointer"
                 >
-                  {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                  {showPassword ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
                 </button>
               </div>
             </div>
 
             {/* Strength Meter */}
             {newPassword && (
-              <div className="space-y-1.5 p-2.5 rounded-xl bg-zinc-900/50 border border-zinc-800/80">
+              <div className="space-y-1 p-2 rounded-md bg-zinc-900/60 border border-zinc-800">
                 <div className="flex items-center justify-between text-[11px]">
-                  <span className="text-zinc-400">Password Strength:</span>
+                  <span className="text-zinc-400">Strength:</span>
                   <span className={cn(
-                    "font-semibold",
+                    "font-medium",
                     strength.label === "Weak" && "text-rose-400",
                     strength.label === "Fair" && "text-amber-400",
                     strength.label === "Strong" && "text-sky-400",
@@ -312,7 +325,7 @@ export function ResetPasswordModal({
                     {strength.label}
                   </span>
                 </div>
-                <div className="h-1.5 w-full bg-zinc-950 rounded-full overflow-hidden flex gap-1">
+                <div className="h-1 w-full bg-zinc-950 rounded-full overflow-hidden flex gap-1">
                   <div className={cn("h-full flex-1 rounded-full transition-all", strength.score >= 1 ? strength.color : "bg-zinc-800")} />
                   <div className={cn("h-full flex-1 rounded-full transition-all", strength.score >= 2 ? strength.color : "bg-zinc-800")} />
                   <div className={cn("h-full flex-1 rounded-full transition-all", strength.score >= 3 ? strength.color : "bg-zinc-800")} />
@@ -322,7 +335,7 @@ export function ResetPasswordModal({
             )}
 
             {/* Confirm Password Input */}
-            <div className="space-y-1.5">
+            <div className="space-y-1">
               <label className="text-xs font-medium text-zinc-300 block">
                 Confirm New Password
               </label>
@@ -332,45 +345,62 @@ export function ResetPasswordModal({
                 onChange={(e) => setConfirmPassword(e.target.value)}
                 placeholder="Confirm new password"
                 disabled={isSubmitting}
-                className="h-10 bg-zinc-900 border-zinc-800 text-xs font-mono text-zinc-100 rounded-xl focus-visible:ring-rose-500"
+                className="h-9 bg-zinc-900 border-zinc-800 text-xs font-mono text-zinc-100 rounded-md focus-visible:ring-zinc-700"
               />
             </div>
 
+            {/* Force password change toggle */}
+            <label className="flex items-center gap-2.5 p-2.5 rounded-md bg-zinc-900/60 border border-zinc-800/80 cursor-pointer hover:border-zinc-700 transition-colors">
+              <input
+                type="checkbox"
+                checked={mustChangePassword}
+                onChange={(e) => setMustChangePassword(e.target.checked)}
+                disabled={isSubmitting}
+                className="h-3.5 w-3.5 rounded border-zinc-700 bg-zinc-950 text-zinc-100 focus:ring-zinc-700 cursor-pointer"
+              />
+              <div className="text-xs">
+                <span className="font-medium text-zinc-200 block">Force password change on next login</span>
+                <span className="text-[10.5px] text-zinc-500">User will choose a new password when logging in</span>
+              </div>
+            </label>
+
             {feedback && (
               <div className={cn(
-                "p-2.5 rounded-xl text-xs flex items-center gap-2",
+                "p-2.5 rounded-md text-xs flex items-center gap-2",
                 feedback.type === "success"
-                  ? "bg-emerald-950/40 border border-emerald-800 text-emerald-300"
-                  : "bg-rose-950/40 border border-rose-800 text-rose-300"
+                  ? "bg-emerald-950/30 border border-emerald-800/50 text-emerald-300"
+                  : "bg-rose-950/30 border border-rose-800/50 text-rose-300"
               )}>
                 {feedback.type === "success" ? (
-                  <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-400" />
+                  <CheckCircle2 className="h-3.5 w-3.5 shrink-0 text-emerald-400" />
                 ) : (
-                  <AlertCircle className="h-4 w-4 shrink-0 text-rose-400" />
+                  <AlertCircle className="h-3.5 w-3.5 shrink-0 text-rose-400" />
                 )}
                 <span>{feedback.message}</span>
               </div>
             )}
 
             {/* Actions */}
-            <div className="flex items-center justify-end gap-2.5 pt-2">
+            <div className="flex items-center justify-end gap-2 pt-1 border-t border-zinc-800">
               <Button
                 type="button"
                 variant="outline"
                 size="sm"
                 onClick={onClose}
                 disabled={isSubmitting}
-                className="text-xs border-zinc-800 hover:bg-zinc-800 text-zinc-400 rounded-xl"
+                className="text-xs border-zinc-800 hover:bg-zinc-800 text-zinc-400 rounded-md flex items-center gap-2 h-8 px-3"
               >
-                Cancel
+                <span>Cancel</span>
+                <KbdEsc />
               </Button>
               <Button
                 type="submit"
                 disabled={isSubmitting || !newPassword || newPassword !== confirmPassword}
-                className="text-xs font-semibold bg-rose-600 hover:bg-rose-500 text-white rounded-xl px-4 h-9 cursor-pointer disabled:opacity-40"
+                className="text-xs font-medium bg-zinc-100 hover:bg-white text-zinc-950 rounded-md px-3.5 h-8 cursor-pointer disabled:opacity-40 flex items-center gap-1.5 transition-colors"
               >
-                {isSubmitting && <Loader2 className="h-3.5 w-3.5 animate-spin mr-1.5" />}
-                Update Password
+                {isSubmitting && <Loader2 className="h-3 w-3 animate-spin mr-1" />}
+                <span>Update Password</span>
+                <KbdEnter className="bg-zinc-200 border-zinc-300 text-zinc-900" />
               </Button>
             </div>
           </form>

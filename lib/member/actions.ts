@@ -14,6 +14,13 @@ import {
 } from "@/types/member";
 import { ApplicationRecord } from "@/types/application";
 import { logAuditEvent } from "@/lib/audit/actions";
+import { PerformanceService } from "@/lib/services/performance.service";
+import {
+  calculateMemberDeployedCapital,
+  calculateVerifiedPercentage,
+  calculateApplicationPanCount,
+  safeAdd,
+} from "@/lib/calculations";
 import { generateEntityId } from "@/lib/utils";
 import { Filter } from "mongodb";
 
@@ -322,7 +329,10 @@ export async function getMembers(
       joinedAt: doc.joinedAt || (doc.createdAt ? new Date(doc.createdAt).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" }) : undefined),
       createdAt: doc.createdAt,
       updatedAt: doc.updatedAt,
-      lastPasswordResetAt: doc.lastPasswordResetAt,
+      lastPasswordResetAt: doc.lastPasswordResetAt || doc.passwordUpdatedAt,
+      passwordUpdatedAt: doc.passwordUpdatedAt || doc.lastPasswordResetAt,
+      hasPassword: true,
+      mustChangePassword: Boolean(doc.mustChangePassword),
       permissions: doc.permissions,
       iposAppliedCount,
       totalContributed,
@@ -440,7 +450,6 @@ export async function createMember(
       name,
       displayName: name,
       username,
-      password: cleanPass,
       email: emailFinal,
       phone: phoneClean,
       phoneNormalized: phoneClean ? phoneClean.replace(/[\s-]/g, "") : undefined,
@@ -469,25 +478,27 @@ export async function createMember(
       },
       passwordHash: combined,
       salt,
+      lastPasswordResetAt: nowIso,
+      passwordUpdatedAt: nowIso,
       joinedAt: new Date().toLocaleDateString("en-IN", { month: "short", year: "numeric" }),
       createdAt: nowIso,
       updatedAt: nowIso,
     };
 
-    // 1. Insert into canonical members collection
+    // 1. Insert into canonical members collection (NEVER store plaintext password)
     await db.collection("members").insertOne(newMemberDoc);
 
     // 2. Insert into canonical users collection for cross-website authentication
     const userDoc: any = {
-      id: `usr_${Date.now()}`,
+      id: `usr_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
       memberId,
       username,
       name,
+      displayName: name,
       email: emailFinal,
       emailNormalized: emailFinal.toLowerCase(),
       phone: phoneClean,
       phoneNormalized: phoneClean ? phoneClean.replace(/[\s-]/g, "") : undefined,
-      password: cleanPass,
       passwordHash: combined,
       role: input.role || "MEMBER",
       status: input.status || "ACTIVE",
@@ -696,7 +707,8 @@ export async function updateMember(
 
 export async function resetMemberPassword(
   memberId: string,
-  newPassword: string
+  newPassword: string,
+  mustChangePassword: boolean = false
 ): Promise<{ success: boolean; error?: string }> {
   try {
     const adminUser = await verifyAdminSession();
@@ -713,7 +725,7 @@ export async function resetMemberPassword(
     }
 
     const cleanPass = newPassword.trim();
-    const { hash, salt, combined } = hashPassword(cleanPass);
+    const { salt, combined } = hashPassword(cleanPass);
     const nowIso = new Date().toISOString();
 
     await Promise.all([
@@ -721,11 +733,14 @@ export async function resetMemberPassword(
         { id: memberId },
         {
           $set: {
-            password: cleanPass,
             passwordHash: combined,
             salt,
             lastPasswordResetAt: nowIso,
+            passwordUpdatedAt: nowIso,
             updatedAt: nowIso,
+          },
+          $unset: {
+            password: "",
           },
         }
       ),
@@ -733,8 +748,24 @@ export async function resetMemberPassword(
         { memberId },
         {
           $set: {
-            password: cleanPass,
             passwordHash: combined,
+            mustChangePassword: Boolean(mustChangePassword),
+            updatedAt: nowIso,
+          },
+          $unset: {
+            password: "",
+          },
+        }
+      ),
+      // Invalidate existing sessions for this user across both memberId and username
+      db.collection("sessions").updateMany(
+        {
+          $or: [{ userId: memberId }, { userId: member.id }, { userId: member.username }],
+          revokedAt: null,
+        },
+        {
+          $set: {
+            revokedAt: nowIso,
             updatedAt: nowIso,
           },
         }
@@ -753,6 +784,8 @@ export async function resetMemberPassword(
       targetName: `@${member.username}`,
       metadata: {
         resetAt: nowIso,
+        mustChangePassword: Boolean(mustChangePassword),
+        sessionsInvalidated: true,
       },
     });
 
@@ -841,283 +874,7 @@ export async function deleteMember(
 }
 
 export async function getMemberPerformanceRecords(): Promise<MemberPerformanceCategory[]> {
-  const db = await getDatabase();
-  if (!db) return [];
-
-  const [membersRaw, appsRaw, distsRaw] = await Promise.all([
-    db.collection("members").find({}, { projection: { id: 1, name: 1, username: 1, avatar: 1 } }).toArray(),
-    db.collection("applications").find({}, {
-      projection: {
-        id: 1,
-        ipoId: 1,
-        ipoName: 1,
-        memberId: 1,
-        applicantName: 1,
-        numberOfPanCards: 1,
-        panNumbers: 1,
-        totalContribution: 1,
-        contributors: 1,
-        status: 1,
-        allotmentStatus: 1,
-        allottedIndices: 1,
-      },
-    }).toArray(),
-    db.collection("profit_distributions").find({}, { projection: { memberPayouts: 1 } }).toArray(),
-  ]);
-
-  const memberMap = new Map<string, { id: string; name: string; username: string; avatar?: string }>();
-  membersRaw.forEach((m) => {
-    if (m.id) {
-      memberMap.set(m.id, {
-        id: m.id,
-        name: m.name || m.username || "Member",
-        username: m.username || m.name || "user",
-        avatar: m.avatar,
-      });
-    }
-  });
-
-  const profitMap = new Map<string, number>();
-  distsRaw.forEach((dist) => {
-    (dist.memberPayouts || []).forEach((p: { memberId: string; profit: number }) => {
-      if (p.memberId) {
-        const cur = profitMap.get(p.memberId) || 0;
-        profitMap.set(p.memberId, cur + (p.profit || 0));
-      }
-    });
-  });
-
-  const capitalMap = new Map<string, number>();
-  const totalAppliedLotsMap = new Map<string, number>();
-  const ipoAppliedLotsMap = new Map<string, Map<string, { ipoName: string; lots: number }>>();
-  const allottedLotsMap = new Map<string, number>();
-
-  appsRaw.forEach((app) => {
-    const panCount =
-      app.numberOfPanCards ||
-      (Array.isArray(app.panNumbers) && app.panNumbers.length > 0 ? app.panNumbers.length : 1);
-    const isSolo = !app.contributors || app.contributors.length === 0;
-
-    let allottedCount = 0;
-    if (Array.isArray(app.allottedIndices) && app.allottedIndices.length > 0) {
-      allottedCount = app.allottedIndices.length;
-    } else if (app.status === "ALLOTTED" || app.allotmentStatus === "ALLOTTED") {
-      allottedCount = panCount;
-    }
-
-    if (isSolo) {
-      if (app.memberId) {
-        capitalMap.set(app.memberId, (capitalMap.get(app.memberId) || 0) + (app.totalContribution || 0));
-        totalAppliedLotsMap.set(app.memberId, (totalAppliedLotsMap.get(app.memberId) || 0) + panCount);
-
-        const memberIpos = ipoAppliedLotsMap.get(app.memberId) || new Map();
-        const curIpoLots = memberIpos.get(app.ipoId) || { ipoName: app.ipoName || "IPO", lots: 0 };
-        curIpoLots.lots += panCount;
-        if (app.ipoName) curIpoLots.ipoName = app.ipoName;
-        memberIpos.set(app.ipoId, curIpoLots);
-        ipoAppliedLotsMap.set(app.memberId, memberIpos);
-
-        if (allottedCount > 0) {
-          allottedLotsMap.set(app.memberId, (allottedLotsMap.get(app.memberId) || 0) + allottedCount);
-        }
-      }
-    } else {
-      const totalAmount =
-        app.contributors.reduce((sum: number, c: { amount?: number }) => sum + (c.amount || 0), 0) || app.totalContribution || 1;
-      app.contributors.forEach((c: { memberId?: string; amount?: number }) => {
-        if (c.memberId) {
-          const contribAmount = c.amount || 0;
-          const shareRatio = totalAmount > 0 ? contribAmount / totalAmount : 1 / app.contributors.length;
-          const contribLots = panCount * shareRatio;
-
-          capitalMap.set(c.memberId, (capitalMap.get(c.memberId) || 0) + contribAmount);
-          totalAppliedLotsMap.set(c.memberId, (totalAppliedLotsMap.get(c.memberId) || 0) + contribLots);
-
-          const memberIpos = ipoAppliedLotsMap.get(c.memberId) || new Map();
-          const curIpoLots = memberIpos.get(app.ipoId) || { ipoName: app.ipoName || "IPO", lots: 0 };
-          curIpoLots.lots += contribLots;
-          if (app.ipoName) curIpoLots.ipoName = app.ipoName;
-          memberIpos.set(app.ipoId, curIpoLots);
-          ipoAppliedLotsMap.set(c.memberId, memberIpos);
-
-          if (allottedCount > 0) {
-            allottedLotsMap.set(c.memberId, (allottedLotsMap.get(c.memberId) || 0) + allottedCount * shareRatio);
-          }
-        }
-      });
-    }
-  });
-
-  function computeStandardCompetitionRanking(
-    rawEntries: { memberId: string; value: number; context?: string }[],
-    formatFn: (val: number, entry: { memberId: string; value: number; context?: string }) => string
-  ): MemberLeaderboardRow[] {
-    const sorted = [...rawEntries]
-      .filter((e) => e.value > 0)
-      .sort((a, b) => b.value - a.value);
-
-    const ranked: MemberLeaderboardRow[] = [];
-    let currentRank = 1;
-
-    for (let i = 0; i < sorted.length; i++) {
-      const entry = sorted[i];
-      if (i > 0) {
-        if (Math.abs(entry.value - sorted[i - 1].value) > 0.0001) {
-          currentRank = i + 1;
-        }
-      }
-
-      if (currentRank > 5) break;
-
-      const member = memberMap.get(entry.memberId);
-      if (member) {
-        ranked.push({
-          rank: currentRank,
-          member,
-          rawValue: entry.value,
-          valueDisplay: formatFn(entry.value, entry),
-          context: entry.context,
-        });
-      }
-    }
-
-    return ranked;
-  }
-
-  // 1. Highest Profit
-  const profitEntries = Array.from(profitMap.entries()).map(([memberId, value]) => ({ memberId, value }));
-  const profitRows = computeStandardCompetitionRanking(profitEntries, (val) => `₹${Math.round(val).toLocaleString("en-IN")}`);
-
-  // 2. Highest Capital Investment
-  const capitalEntries = Array.from(capitalMap.entries()).map(([memberId, value]) => ({ memberId, value }));
-  const capitalRows = computeStandardCompetitionRanking(capitalEntries, (val) => `₹${Math.round(val).toLocaleString("en-IN")}`);
-
-  // 3. Highest Total Applied Lots
-  const appliedEntries = Array.from(totalAppliedLotsMap.entries()).map(([memberId, value]) => ({ memberId, value }));
-  const appliedRows = computeStandardCompetitionRanking(appliedEntries, (val) => `${Math.round(val)} Lots`);
-
-  // 4. Highest Lots Applied in a Single IPO
-  const singleIpoEntriesMap = new Map<string, { memberId: string; value: number; context?: string }>();
-  ipoAppliedLotsMap.forEach((ipos, memberId) => {
-    let maxLots = 0;
-    let maxIpoName = "";
-    ipos.forEach((d) => {
-      if (d.lots > maxLots) {
-        maxLots = d.lots;
-        maxIpoName = d.ipoName;
-      }
-    });
-    if (maxLots > 0) {
-      singleIpoEntriesMap.set(memberId, { memberId, value: maxLots, context: maxIpoName });
-    }
-  });
-  const singleIpoEntries = Array.from(singleIpoEntriesMap.values());
-  const singleIpoRows = computeStandardCompetitionRanking(singleIpoEntries, (val) => `${Math.round(val)} Lots`);
-
-  // 5. Highest Total Allotted Lots
-  const allottedEntries = Array.from(allottedLotsMap.entries()).map(([memberId, value]) => ({ memberId, value }));
-  const allottedRows = computeStandardCompetitionRanking(allottedEntries, (val) => `${Math.round(val)} ${Math.round(val) === 1 ? "Lot" : "Lots"}`);
-
-  // 6. Highest Allotment / Applied Lot Percentage
-  const rateEntries: { memberId: string; value: number; context?: string }[] = [];
-  totalAppliedLotsMap.forEach((applied, memberId) => {
-    if (applied >= 1) {
-      const allotted = allottedLotsMap.get(memberId) || 0;
-      if (allotted > 0) {
-        const rate = (allotted / applied) * 100;
-        rateEntries.push({
-          memberId,
-          value: rate,
-          context: `${allotted.toFixed(1)} / ${applied.toFixed(1)} lots`,
-        });
-      }
-    }
-  });
-  const rateRows = computeStandardCompetitionRanking(rateEntries, (val) => `${val.toFixed(1)}%`);
-
-  // 7. Most Offerings Joined
-  const offeringEntries: { memberId: string; value: number }[] = [];
-  ipoAppliedLotsMap.forEach((ipos, memberId) => {
-    if (ipos.size > 0) {
-      offeringEntries.push({ memberId, value: ipos.size });
-    }
-  });
-  const offeringsRows = computeStandardCompetitionRanking(offeringEntries, (val) => `${val} IPOs`);
-
-  const categories: MemberPerformanceCategory[] = [
-    {
-      id: "highest_profit",
-      metricId: "highest_profit",
-      badgeLabel: "HIGHEST PROFIT",
-      title: "Highest Profit",
-      subtitle: "Lifetime distributed earnings from Nexo payouts",
-      accentColor: "emerald",
-      rows: profitRows,
-      isEmpty: profitRows.length === 0,
-    },
-    {
-      id: "highest_capital",
-      metricId: "highest_capital",
-      badgeLabel: "HIGHEST CAPITAL",
-      title: "Capital Investment",
-      subtitle: "Total pooled funds across solo & split applications",
-      accentColor: "sky",
-      rows: capitalRows,
-      isEmpty: capitalRows.length === 0,
-    },
-    {
-      id: "most_applied_lots",
-      metricId: "most_applied_lots",
-      badgeLabel: "MOST APPLIED LOTS",
-      title: "Total Applied Lots",
-      subtitle: "Cumulative lots submitted across all offerings",
-      accentColor: "indigo",
-      rows: appliedRows,
-      isEmpty: appliedRows.length === 0,
-    },
-    {
-      id: "highest_single_ipo",
-      metricId: "highest_single_ipo",
-      badgeLabel: "SINGLE IPO RECORD",
-      title: "Single IPO Max Lots",
-      subtitle: "Highest lot count applied for in a single offering",
-      accentColor: "purple",
-      rows: singleIpoRows,
-      isEmpty: singleIpoRows.length === 0,
-    },
-    {
-      id: "most_allotted_lots",
-      metricId: "most_allotted_lots",
-      badgeLabel: "MOST ALLOTTED LOTS",
-      title: "Total Allotted Lots",
-      subtitle: "Successfully confirmed lot allocations",
-      accentColor: "amber",
-      rows: allottedRows,
-      isEmpty: allottedRows.length === 0,
-    },
-    {
-      id: "highest_allotment_rate",
-      metricId: "highest_allotment_rate",
-      badgeLabel: "ALLOTMENT RATE",
-      title: "Allotment Rate %",
-      subtitle: "Allotted lots ÷ applied lots (min. 1 lot)",
-      accentColor: "teal",
-      rows: rateRows,
-      isEmpty: rateRows.length === 0,
-    },
-    {
-      id: "most_offerings",
-      metricId: "most_offerings",
-      badgeLabel: "SYNDICATE PARTICIPATION",
-      title: "Most IPOs Joined",
-      subtitle: "Distinct IPO syndicates participated in",
-      accentColor: "rose",
-      rows: offeringsRows,
-      isEmpty: offeringsRows.length === 0,
-    },
-  ];
-
-  return categories;
+  return PerformanceService.getMemberPerformanceRecords();
 }
 
 export interface MemberPanRecord {
@@ -1262,7 +1019,6 @@ export async function getMemberDetail(
   // Calculate Solo vs Combined application breakdown and member's actual deployed capital
   let soloApplicationsCount = 0;
   let combinedApplicationsCount = 0;
-  let totalCapitalDeployed = 0;
 
   const panMap = new Map<string, MemberPanRecord>();
 
@@ -1282,11 +1038,8 @@ export async function getMemberDetail(
     const isCombined = Boolean(app.contributors && app.contributors.length > 0);
     if (isCombined) {
       combinedApplicationsCount += 1;
-      const userContrib = app.contributors?.find((c) => c.memberId === memberId);
-      totalCapitalDeployed += (userContrib?.amount || 0);
     } else {
       soloApplicationsCount += 1;
-      totalCapitalDeployed += (app.totalContribution || 0);
     }
 
     // Extract PAN records used in applications
@@ -1363,12 +1116,17 @@ export async function getMemberDetail(
     joinedAt: memberDoc.joinedAt,
     createdAt: memberDoc.createdAt,
     updatedAt: memberDoc.updatedAt,
-    lastPasswordResetAt: memberDoc.lastPasswordResetAt,
+    lastPasswordResetAt: memberDoc.lastPasswordResetAt || memberDoc.passwordUpdatedAt,
+    passwordUpdatedAt: memberDoc.passwordUpdatedAt || memberDoc.lastPasswordResetAt,
+    hasPassword: true,
+    mustChangePassword: Boolean(memberDoc.mustChangePassword),
     permissions: memberDoc.permissions,
     iposAppliedCount: new Set(applications.map((a) => a.ipoId)).size,
-    totalContributed: totalCapitalDeployed,
-    totalProfitEarned: payouts.reduce((acc, p) => acc + (p.profit || 0), 0),
+    totalContributed: calculateMemberDeployedCapital(applications, memberId),
+    totalProfitEarned: payouts.reduce((acc, p) => safeAdd(acc, p.profit), 0),
   };
+
+  const totalCapitalDeployed = member.totalContributed || 0;
 
   return {
     member,

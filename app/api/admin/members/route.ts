@@ -24,7 +24,7 @@ export async function GET(req: NextRequest) {
 
     const members = await db
       .collection<MemberData>("members")
-      .find(query, { projection: { passwordHash: 0, salt: 0, _id: 0 } })
+      .find(query, { projection: { password: 0, passwordHash: 0, salt: 0, _id: 0 } })
       .sort({ createdAt: -1 })
       .toArray();
 

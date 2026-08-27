@@ -8,8 +8,10 @@ import {
   KeyRound, Eye, EyeOff, Loader2, Check, AlertCircle,
 } from "lucide-react";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
+import { useToast } from "@/components/ui/toast";
 
 export function AdminProfileView({ initialData }: { initialData: AdminProfileData | null }) {
+  const toast = useToast();
   const member = initialData?.member;
 
   // Password change state
@@ -27,11 +29,15 @@ export function AdminProfileView({ initialData }: { initialData: AdminProfileDat
     setResult(null);
 
     if (newPass.length < 6) {
-      setResult({ ok: false, msg: "New password must be at least 6 characters." });
+      const msg = "New password must be at least 6 characters.";
+      setResult({ ok: false, msg });
+      toast.error("Invalid Password", msg);
       return;
     }
     if (newPass !== confirmPass) {
-      setResult({ ok: false, msg: "Passwords do not match." });
+      const msg = "Passwords do not match.";
+      setResult({ ok: false, msg });
+      toast.error("Password Mismatch", msg);
       return;
     }
 
@@ -41,11 +47,14 @@ export function AdminProfileView({ initialData }: { initialData: AdminProfileDat
 
     if (res.success) {
       setResult({ ok: true, msg: "Password updated successfully." });
+      toast.success("Password Updated", "Your admin credentials were updated successfully.");
       setCurrentPass("");
       setNewPass("");
       setConfirmPass("");
     } else {
-      setResult({ ok: false, msg: res.error || "Failed to update password." });
+      const msg = res.error || "Failed to update password.";
+      setResult({ ok: false, msg });
+      toast.error("Password Update Failed", msg);
     }
   }
 

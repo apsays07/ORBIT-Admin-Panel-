@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { NexoIPORecord } from "@/types/ipo";
 import { createIpo, updateIpo } from "@/lib/ipo/actions";
 import {
@@ -12,6 +12,9 @@ import {
   Check,
   Calendar,
 } from "lucide-react";
+import { useModalKeyboardShortcuts } from "@/lib/hooks/use-keyboard-shortcuts";
+import { useToast } from "@/components/ui/toast";
+import { KbdEnter, KbdEsc } from "@/components/ui/kbd";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
@@ -44,7 +47,9 @@ interface IpoModalProps {
 }
 
 export function IpoModal({ isOpen, onClose, initialData, onSuccess }: IpoModalProps) {
+  const toast = useToast();
   const isEditing = !!initialData;
+  const nameInputRef = useRef<HTMLInputElement | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [validationErrors, setValidationErrors] = useState<Record<string, string>>({});
@@ -74,16 +79,13 @@ export function IpoModal({ isOpen, onClose, initialData, onSuccess }: IpoModalPr
     initialData?.metrics?.gmpPercent !== undefined ? String(initialData.metrics.gmpPercent) : ""
   );
 
-  // Keyboard escape listener
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "Escape" && isOpen && !loading) {
-        onClose();
-      }
-    };
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [isOpen, loading, onClose]);
+  // Modal keyboard handling (ESC & focus restore)
+  useModalKeyboardShortcuts({
+    isOpen,
+    onClose,
+    isSubmitting: loading,
+    initialFocusRef: nameInputRef,
+  });
 
   // GMP Auto-Calculation
   function handleGmpPriceChange(val: string) {
@@ -199,17 +201,29 @@ export function IpoModal({ isOpen, onClose, initialData, onSuccess }: IpoModalPr
       let res;
       if (isEditing && initialData?.id) {
         res = await updateIpo(initialData.id, formData);
+        if (res.success) {
+          toast.success("IPO Updated", `"${name.trim()}" details have been successfully updated.`);
+          onSuccess();
+        } else {
+          const errMsg = res.error || "Failed to update IPO record.";
+          setError(errMsg);
+          toast.error("Failed to Update IPO", errMsg);
+        }
       } else {
         res = await createIpo(formData);
-      }
-
-      if (res.success) {
-        onSuccess();
-      } else {
-        setError(res.error || "Failed to save IPO record.");
+        if (res.success) {
+          toast.success("IPO Created", `"${name.trim()}" has been successfully added to offerings.`);
+          onSuccess();
+        } else {
+          const errMsg = res.error || "Failed to create IPO record.";
+          setError(errMsg);
+          toast.error("Failed to Create IPO", errMsg);
+        }
       }
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "An unexpected server error occurred.");
+      const errMsg = err instanceof Error ? err.message : "An unexpected server error occurred.";
+      setError(errMsg);
+      toast.error("Server Error", errMsg);
     } finally {
       setLoading(false);
     }
@@ -221,28 +235,20 @@ export function IpoModal({ isOpen, onClose, initialData, onSuccess }: IpoModalPr
     <div
       role="dialog"
       aria-modal="true"
-      className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-4 animate-in fade-in duration-200"
+      className="fixed inset-0 z-50 bg-black/80 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in duration-150"
     >
-      <div className="relative w-full max-w-xl bg-zinc-950/95 border border-zinc-800/80 rounded-3xl shadow-[0_25px_70px_rgba(0,0,0,0.85)] text-zinc-100 font-sans overflow-hidden flex flex-col backdrop-blur-xl">
-        {/* Top subtle ambient glow line */}
-        <div className="absolute top-0 inset-x-0 h-[1.5px] bg-gradient-to-r from-transparent via-indigo-500/50 to-transparent" />
-
+      <div className="relative w-full max-w-xl bg-zinc-950 border border-zinc-800 rounded-xl shadow-2xl text-zinc-100 font-sans overflow-hidden flex flex-col">
         {/* Modal Header */}
-        <div className="px-6 pt-5 pb-4 flex items-start justify-between border-b border-zinc-900/80 shrink-0">
-          <div className="flex items-center gap-3.5">
-            <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-indigo-500/20 via-indigo-600/10 to-purple-500/20 border border-indigo-500/30 text-indigo-400 flex items-center justify-center shrink-0 shadow-inner">
-              <Plus className="h-4 w-4" />
+        <div className="px-5 py-3.5 flex items-center justify-between border-b border-zinc-800 bg-zinc-900/40 shrink-0">
+          <div className="flex items-center gap-2.5">
+            <div className="h-7 w-7 rounded-md bg-zinc-800 border border-zinc-700 text-zinc-300 flex items-center justify-center shrink-0">
+              <Plus className="h-3.5 w-3.5" />
             </div>
-            <div className="space-y-0.5">
-              <div className="flex items-center gap-2">
-                <span className="text-[10.5px] font-semibold tracking-wider px-2.5 py-0.5 rounded-full bg-indigo-500/10 text-indigo-300 border border-indigo-500/20 font-mono uppercase">
-                  {isEditing ? "Edit Offering" : "New Offering"}
-                </span>
-                <span className="text-[11.5px] text-zinc-400 font-medium font-sans">Basic Details</span>
-              </div>
-              <h2 className="text-[18px] font-semibold text-zinc-100 tracking-tight leading-snug font-sans">
-                {isEditing ? "Edit IPO Opportunity" : "Add IPO Opportunity"}
+            <div>
+              <h2 className="text-sm font-semibold text-zinc-100 tracking-tight">
+                {isEditing ? "Edit IPO Offering" : "Add New IPO Offering"}
               </h2>
+              <p className="text-[11px] text-zinc-500">IPO offering details, dates, and allocation sizing</p>
             </div>
           </div>
 
@@ -250,29 +256,30 @@ export function IpoModal({ isOpen, onClose, initialData, onSuccess }: IpoModalPr
             type="button"
             onClick={onClose}
             disabled={loading}
-            className="p-2 rounded-xl text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800/80 border border-transparent hover:border-zinc-700/60 transition-all cursor-pointer"
+            className="p-1 rounded-md text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800 transition-colors cursor-pointer"
           >
             <X className="h-4 w-4" />
           </button>
         </div>
 
         {/* Modal Form Body */}
-        <form onSubmit={handleFinalSubmit} className="px-6 py-4 space-y-4 flex-1">
+        <form onSubmit={handleFinalSubmit} className="px-5 py-4 space-y-3.5 flex-1">
           {/* Error Banner */}
           {error && (
-            <div className="p-2.5 rounded-xl bg-rose-950/40 border border-rose-900/60 text-rose-300 text-xs flex items-center gap-2 font-medium">
-              <AlertCircle className="h-4 w-4 shrink-0 text-rose-400" />
+            <div className="p-2.5 rounded-md bg-rose-950/30 border border-rose-800/50 text-rose-300 text-xs flex items-center gap-2 font-medium">
+              <AlertCircle className="h-3.5 w-3.5 shrink-0 text-rose-400" />
               <span>{error}</span>
             </div>
           )}
 
           {/* Row 1: IPO Name */}
-          <div className="space-y-1.5">
-            <label className="text-[12px] font-medium text-zinc-300 flex items-center gap-1 font-sans">
+          <div className="space-y-1">
+            <label className="text-xs font-medium text-zinc-300 flex items-center gap-1">
               <span>IPO Name</span>
               <span className="text-rose-400">*</span>
             </label>
             <Input
+              ref={nameInputRef}
               type="text"
               value={name}
               onChange={(e) => {
@@ -283,7 +290,7 @@ export function IpoModal({ isOpen, onClose, initialData, onSuccess }: IpoModalPr
               }}
               placeholder="e.g. Tempsens Instruments Limited"
               className={cn(
-                "h-10 bg-zinc-900/60 hover:bg-zinc-900/90 border-zinc-800/80 text-[13.5px] text-zinc-100 placeholder:text-zinc-500 rounded-xl focus-visible:ring-indigo-500/40 focus-visible:border-indigo-500/80 transition-all shadow-inner font-sans",
+                "h-9 bg-zinc-900 border-zinc-800 text-xs text-zinc-100 placeholder:text-zinc-500 rounded-md focus-visible:ring-zinc-700",
                 validationErrors.name && "border-rose-500"
               )}
             />
@@ -295,16 +302,16 @@ export function IpoModal({ isOpen, onClose, initialData, onSuccess }: IpoModalPr
           {/* Row 2: Category & Date */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             {/* Category */}
-            <div className="space-y-1.5">
-              <label className="text-[12px] font-medium text-zinc-300 block font-sans">Category</label>
-              <div className="flex bg-zinc-900/80 p-1 rounded-xl border border-zinc-800 h-10 items-center">
+            <div className="space-y-1">
+              <label className="text-xs font-medium text-zinc-300 block">Category</label>
+              <div className="flex bg-zinc-900 p-0.5 rounded-md border border-zinc-800 h-9 items-center">
                 <button
                   type="button"
                   onClick={() => setCategory("Mainboard")}
                   className={cn(
-                    "flex-1 h-full rounded-lg text-xs font-medium transition-all cursor-pointer flex items-center justify-center font-sans",
+                    "flex-1 h-full rounded text-xs font-medium transition-colors cursor-pointer flex items-center justify-center",
                     category === "Mainboard"
-                      ? "bg-zinc-800 text-zinc-100 border border-zinc-700/80 shadow-xs font-semibold"
+                      ? "bg-zinc-800 text-zinc-100 font-medium border border-zinc-700/80 shadow-xs"
                       : "text-zinc-400 hover:text-zinc-200"
                   )}
                 >
@@ -314,9 +321,9 @@ export function IpoModal({ isOpen, onClose, initialData, onSuccess }: IpoModalPr
                   type="button"
                   onClick={() => setCategory("SME")}
                   className={cn(
-                    "flex-1 h-full rounded-lg text-xs font-medium transition-all cursor-pointer flex items-center justify-center font-sans",
+                    "flex-1 h-full rounded text-xs font-medium transition-colors cursor-pointer flex items-center justify-center",
                     category === "SME"
-                      ? "bg-zinc-800 text-zinc-100 border border-zinc-700/80 shadow-xs font-semibold"
+                      ? "bg-zinc-800 text-zinc-100 font-medium border border-zinc-700/80 shadow-xs"
                       : "text-zinc-400 hover:text-zinc-200"
                   )}
                 >
@@ -326,9 +333,9 @@ export function IpoModal({ isOpen, onClose, initialData, onSuccess }: IpoModalPr
             </div>
 
             {/* Date */}
-            <div className="space-y-1.5">
-              <label className="text-[12px] font-medium text-zinc-300 flex items-center gap-1.5 font-sans">
-                <Calendar className="h-3.5 w-3.5 text-zinc-400" />
+            <div className="space-y-1">
+              <label className="text-xs font-medium text-zinc-300 flex items-center gap-1.5">
+                <Calendar className="h-3 w-3 text-zinc-400" />
                 <span>Date</span>
                 <span className="text-rose-400">*</span>
               </label>
@@ -336,7 +343,7 @@ export function IpoModal({ isOpen, onClose, initialData, onSuccess }: IpoModalPr
                 type="date"
                 value={ipoDate}
                 onChange={(e) => setIpoDate(e.target.value)}
-                className="h-10 bg-zinc-900/60 hover:bg-zinc-900/90 border-zinc-800/80 text-[13px] text-zinc-100 font-sans rounded-xl focus-visible:ring-indigo-500/40 focus-visible:border-indigo-500/80 transition-all shadow-inner [color-scheme:dark]"
+                className="h-9 bg-zinc-900 border-zinc-800 text-xs text-zinc-100 rounded-md focus-visible:ring-zinc-700 [color-scheme:dark]"
               />
             </div>
           </div>
@@ -344,13 +351,13 @@ export function IpoModal({ isOpen, onClose, initialData, onSuccess }: IpoModalPr
           {/* Row 3: Min Investment + Issue Size */}
           <div className="grid grid-cols-2 gap-3">
             {/* Min Investment */}
-            <div className="space-y-1.5">
-              <label className="text-[12px] font-medium text-zinc-300 flex items-center gap-1 font-sans">
+            <div className="space-y-1">
+              <label className="text-xs font-medium text-zinc-300 flex items-center gap-1">
                 <span>Min Investment</span>
                 <span className="text-rose-400">*</span>
               </label>
               <div className="relative">
-                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500 font-mono text-xs font-semibold select-none">₹</span>
+                <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-zinc-500 font-mono text-xs select-none">₹</span>
                 <Input
                   type="number"
                   value={minInvestment}
@@ -362,7 +369,7 @@ export function IpoModal({ isOpen, onClose, initialData, onSuccess }: IpoModalPr
                   }}
                   placeholder="15000"
                   className={cn(
-                    "pl-7 h-10 bg-zinc-900/60 hover:bg-zinc-900/90 border-zinc-800/80 text-[13.5px] text-zinc-100 font-mono placeholder:text-zinc-500 rounded-xl focus-visible:ring-indigo-500/40 focus-visible:border-indigo-500/80 transition-all shadow-inner",
+                    "pl-6 h-9 bg-zinc-900 border-zinc-800 text-xs font-mono text-zinc-100 placeholder:text-zinc-500 rounded-md focus-visible:ring-zinc-700",
                     validationErrors.minInvestment && "border-rose-500"
                   )}
                 />
@@ -373,13 +380,13 @@ export function IpoModal({ isOpen, onClose, initialData, onSuccess }: IpoModalPr
             </div>
 
             {/* Issue Size */}
-            <div className="space-y-1.5">
-              <label className="text-[12px] font-medium text-zinc-300 flex items-center gap-1 font-sans">
+            <div className="space-y-1">
+              <label className="text-xs font-medium text-zinc-300 flex items-center gap-1">
                 <span>Issue Size</span>
                 <span className="text-rose-400">*</span>
               </label>
               <div className="relative">
-                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500 font-mono text-xs font-semibold select-none">₹</span>
+                <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-zinc-500 font-mono text-xs select-none">₹</span>
                 <Input
                   type="number"
                   value={issueSize}
@@ -391,11 +398,11 @@ export function IpoModal({ isOpen, onClose, initialData, onSuccess }: IpoModalPr
                   }}
                   placeholder="650"
                   className={cn(
-                    "pl-7 pr-10 h-10 bg-zinc-900/60 hover:bg-zinc-900/90 border-zinc-800/80 text-[13.5px] text-zinc-100 font-mono placeholder:text-zinc-500 rounded-xl focus-visible:ring-indigo-500/40 focus-visible:border-indigo-500/80 transition-all shadow-inner",
+                    "pl-6 pr-8 h-9 bg-zinc-900 border-zinc-800 text-xs font-mono text-zinc-100 placeholder:text-zinc-500 rounded-md focus-visible:ring-zinc-700",
                     validationErrors.issueSize && "border-rose-500"
                   )}
                 />
-                <span className="absolute right-2.5 top-1/2 -translate-y-1/2 px-1.5 py-0.5 rounded bg-zinc-800/80 border border-zinc-700/60 text-zinc-400 font-mono text-[10.5px] select-none">
+                <span className="absolute right-2 top-1/2 -translate-y-1/2 px-1 py-0.2 rounded bg-zinc-800 border border-zinc-700 text-zinc-400 font-mono text-[10px] select-none">
                   Cr
                 </span>
               </div>
@@ -406,8 +413,8 @@ export function IpoModal({ isOpen, onClose, initialData, onSuccess }: IpoModalPr
           </div>
 
           {/* Row 3: Thesis / Description */}
-          <div className="space-y-1.5">
-            <label className="text-[12px] font-medium text-zinc-300 flex items-center gap-1 font-sans">
+          <div className="space-y-1">
+            <label className="text-xs font-medium text-zinc-300 flex items-center gap-1">
               <span>Thesis / Decision Notes</span>
               <span className="text-rose-400">*</span>
             </label>
@@ -420,9 +427,15 @@ export function IpoModal({ isOpen, onClose, initialData, onSuccess }: IpoModalPr
                   setValidationErrors((prev) => ({ ...prev, thesis: "" }));
                 }
               }}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
+                  e.preventDefault();
+                  handleFinalSubmit(e as any);
+                }
+              }}
               placeholder="Leading manufacturer with strong domestic market share and robust financials..."
               className={cn(
-                "w-full bg-zinc-900/60 hover:bg-zinc-900/90 border border-zinc-800/80 text-[13px] text-zinc-100 placeholder:text-zinc-500 rounded-xl p-3 focus:outline-hidden focus:ring-1 focus:ring-indigo-500/50 focus:border-indigo-500/80 resize-none leading-relaxed transition-all shadow-inner font-sans",
+                "w-full bg-zinc-900 border border-zinc-800 text-xs text-zinc-100 placeholder:text-zinc-500 rounded-md p-2.5 focus:outline-none focus:ring-1 focus:ring-zinc-700 resize-none leading-relaxed transition-colors font-sans",
                 validationErrors.thesis && "border-rose-500"
               )}
             />
@@ -432,19 +445,19 @@ export function IpoModal({ isOpen, onClose, initialData, onSuccess }: IpoModalPr
           </div>
 
           {/* Row 4: GMP (Optional) */}
-          <div className="p-3.5 bg-gradient-to-br from-emerald-950/20 to-zinc-900/40 border border-emerald-500/20 rounded-2xl space-y-2.5 relative overflow-hidden backdrop-blur-xs">
+          <div className="p-3 bg-zinc-900/50 border border-zinc-800 rounded-md space-y-2">
             <div className="flex items-center justify-between">
-              <div className="flex items-center gap-1.5 text-[11.5px] font-semibold text-emerald-400 font-sans">
+              <div className="flex items-center gap-1.5 text-xs font-medium text-zinc-300">
                 <TrendingUp className="h-3.5 w-3.5 text-emerald-400" />
                 <span>Grey Market Premium (GMP)</span>
               </div>
-              <span className="text-[10.5px] font-mono font-medium px-2 py-0.5 rounded-md bg-zinc-800/60 text-zinc-400 border border-zinc-700/40 select-none">
+              <span className="text-[10px] font-mono text-zinc-500 px-1.5 py-0.2 rounded bg-zinc-800 border border-zinc-700 select-none">
                 Optional
               </span>
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1">
-                <label className="text-[11px] font-medium text-zinc-400 font-sans">GMP Price (₹)</label>
+                <label className="text-[11px] font-medium text-zinc-400">GMP Price (₹)</label>
                 <div className="relative">
                   <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-zinc-500 font-mono text-xs">₹</span>
                   <Input
@@ -452,12 +465,12 @@ export function IpoModal({ isOpen, onClose, initialData, onSuccess }: IpoModalPr
                     value={gmpPrice}
                     onChange={(e) => handleGmpPriceChange(e.target.value)}
                     placeholder="0"
-                    className="pl-6 h-8.5 bg-zinc-950/80 border-zinc-800 text-xs font-mono text-zinc-100 rounded-xl focus-visible:ring-emerald-500/40 focus-visible:border-emerald-500/70"
+                    className="pl-6 h-8 bg-zinc-950 border-zinc-800 text-xs font-mono text-zinc-100 rounded-md focus-visible:ring-zinc-700"
                   />
                 </div>
               </div>
               <div className="space-y-1">
-                <label className="text-[11px] font-medium text-zinc-400 font-sans">GMP %</label>
+                <label className="text-[11px] font-medium text-zinc-400">GMP %</label>
                 <div className="relative">
                   <Input
                     type="number"
@@ -465,42 +478,36 @@ export function IpoModal({ isOpen, onClose, initialData, onSuccess }: IpoModalPr
                     value={gmpPercent}
                     onChange={(e) => setGmpPercent(e.target.value)}
                     placeholder="0.00"
-                    className="pr-7 h-8.5 bg-zinc-950/80 border-zinc-800 text-xs font-mono text-zinc-100 rounded-xl focus-visible:ring-emerald-500/40 focus-visible:border-emerald-500/70"
+                    className="pr-6 h-8 bg-zinc-950 border-zinc-800 text-xs font-mono text-zinc-100 rounded-md focus-visible:ring-zinc-700"
                   />
-                  <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-zinc-500 font-mono text-xs">%</span>
+                  <span className="absolute right-2 top-1/2 -translate-y-1/2 text-zinc-500 font-mono text-xs">%</span>
                 </div>
               </div>
             </div>
           </div>
 
           {/* Footer Buttons */}
-          <div className="flex items-center justify-between pt-2 border-t border-zinc-900 shrink-0">
+          <div className="flex items-center justify-between pt-2 border-t border-zinc-800 shrink-0">
             <Button
               type="button"
               variant="outline"
               onClick={onClose}
               disabled={loading}
-              className="h-10 px-5 text-[13px] font-medium bg-zinc-900/80 hover:bg-zinc-800 text-zinc-300 hover:text-white border-zinc-800 rounded-xl cursor-pointer transition-all"
+              className="h-8 px-3 text-xs font-medium border-zinc-800 text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800 rounded-md cursor-pointer transition-colors flex items-center gap-2"
             >
-              Cancel
+              <span>Cancel</span>
+              <KbdEsc />
             </Button>
 
             <Button
               type="submit"
               disabled={loading}
-              className="h-10 px-6 text-[13px] font-semibold bg-gradient-to-r from-indigo-500 to-indigo-600 hover:from-indigo-400 hover:to-indigo-500 text-white rounded-xl shadow-lg shadow-indigo-500/25 flex items-center gap-2 cursor-pointer transition-all hover:scale-[1.01] active:scale-[0.99] tracking-tight font-sans"
+              isLoading={loading}
+              loadingText={isEditing ? "Saving..." : "Creating..."}
+              className="h-8 min-w-[130px] px-4 text-xs font-medium bg-zinc-100 hover:bg-white text-zinc-950 rounded-md flex items-center justify-center gap-1.5 cursor-pointer transition-colors active:scale-95"
             >
-              {loading ? (
-                <>
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                  <span>{isEditing ? "Saving..." : "Creating..."}</span>
-                </>
-              ) : (
-                <>
-                  <Check className="h-4 w-4" />
-                  <span>{isEditing ? "Save Changes" : "Create IPO"}</span>
-                </>
-              )}
+              <span>{isEditing ? "Save IPO" : "Create IPO"}</span>
+              <KbdEnter className="bg-zinc-200 border-zinc-300 text-zinc-900" />
             </Button>
           </div>
         </form>

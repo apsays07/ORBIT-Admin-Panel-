@@ -26,7 +26,21 @@ export class DashboardService {
       memberRepo.countTotalMembers(),
       appRepo.countTotalPanCards(),
       db.collection("applications").aggregate<{ total: number }>([
-        { $group: { _id: null, total: { $sum: { $ifNull: ["$totalContribution", 0] } } } },
+        {
+          $group: {
+            _id: null,
+            total: {
+              $sum: {
+                $convert: {
+                  input: "$totalContribution",
+                  to: "double",
+                  onError: 0,
+                  onNull: 0,
+                },
+              },
+            },
+          },
+        },
       ]).maxTimeMS(8000).toArray(),
     ]);
 

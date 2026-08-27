@@ -324,11 +324,31 @@ export function ActivityManagementView({
               <Activity className="h-6 w-6" />
             </div>
             <div className="space-y-1">
-              <h4 className="text-sm font-semibold text-zinc-200">No activity found</h4>
-              <p className="text-xs text-zinc-500 max-w-sm mx-auto">
-                No audit events match your search or filter parameters.
+              <h4 className="text-sm font-semibold text-zinc-200">
+                {searchQuery || selectedEventType !== "ALL" || selectedCategory !== "ALL" || selectedSeverity !== "ALL"
+                  ? "No activity found"
+                  : "No audit records recorded"}
+              </h4>
+              <p className="text-xs text-zinc-400 max-w-sm mx-auto">
+                {searchQuery || selectedEventType !== "ALL" || selectedCategory !== "ALL" || selectedSeverity !== "ALL"
+                  ? "No audit events match your search or filter parameters."
+                  : "Audit events will appear here once administrative actions take place."}
               </p>
             </div>
+            {(searchQuery || selectedEventType !== "ALL" || selectedCategory !== "ALL" || selectedSeverity !== "ALL") && (
+              <div className="pt-1">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={handleClearSearch}
+                  className="h-8.5 px-4 text-xs font-medium border-zinc-700 bg-zinc-900 text-zinc-200 hover:bg-zinc-800 rounded-xl cursor-pointer active:scale-95 transition-all"
+                >
+                  <X className="h-3.5 w-3.5 mr-1 text-zinc-400" />
+                  Clear Filters
+                </Button>
+              </div>
+            )}
           </div>
         ) : (
           <div className="overflow-x-auto">
@@ -350,7 +370,7 @@ export function ActivityManagementView({
                   const handleDisplay = act.actorUsername ? `@${act.actorUsername}` : undefined;
 
                   return (
-                    <tr key={act.id} className="hover:bg-zinc-800/40 transition-colors group">
+                    <tr key={act.id} className="hover:bg-zinc-800/40 transition-colors duration-150 group">
                       {/* Time */}
                       <td className="py-3.5 px-4 text-zinc-400 text-xs">
                         {formatTimestamp(act.createdAt || act.timestamp)}

@@ -3,6 +3,7 @@ import { MemberRepository } from "@/lib/repositories/member.repository";
 import { ApplicationRepository } from "@/lib/repositories/application.repository";
 import { parsePaginationParams, calculatePaginationMeta } from "@/lib/utils/pagination";
 import { GetMembersParams, GetMembersResponse, MemberData } from "@/types/member";
+import { calculateVerifiedPercentage } from "@/lib/calculations";
 import { Filter } from "mongodb";
 
 export class MemberService {
@@ -76,7 +77,7 @@ export class MemberService {
 
     const adminCount = memberFacetRaw?.adminCount?.[0]?.count || 0;
     const verifiedCount = memberFacetRaw?.verifiedCount?.[0]?.count || 0;
-    const verifiedPercentage = total > 0 ? Math.round((verifiedCount / total) * 100) : 100;
+    const verifiedPercentage = calculateVerifiedPercentage(verifiedCount, total);
 
     return {
       members: rows,

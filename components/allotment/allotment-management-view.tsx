@@ -39,6 +39,7 @@ import { Card } from "@/components/ui/card";
 import { MemberAvatar } from "@/components/ui/member-avatar";
 import { cn, formatCombinedApplicants } from "@/lib/utils";
 import { OfferingSelectDropdown } from "@/components/ui/offering-select-dropdown";
+import { useToast } from "@/components/ui/toast";
 
 interface AllotmentManagementViewProps {
   selectedIpo: NexoIPORecord | null;
@@ -58,6 +59,7 @@ export function AllotmentManagementView({
   currentPage,
   totalPages,
 }: AllotmentManagementViewProps) {
+  const toast = useToast();
   const router = useRouter();
   const searchParams = useSearchParams();
   const [isPending, startTransition] = useTransition();
@@ -262,6 +264,7 @@ export function AllotmentManagementView({
   function copyToClipboard(text: string) {
     navigator.clipboard.writeText(text);
     setCopiedPan(text);
+    toast.success("PAN Copied", `PAN "${text}" copied to clipboard.`, 2200);
     setTimeout(() => setCopiedPan(null), 2000);
   }
 
@@ -273,7 +276,10 @@ export function AllotmentManagementView({
     setIsUpdatingUrl(false);
     if (res.success) {
       setIsEditUrlOpen(false);
+      toast.success("Registrar URL Saved", "Registrar link updated successfully.");
       router.refresh();
+    } else {
+      toast.error("Failed to Update URL", res.error || "Could not update registrar URL.");
     }
   }
 
@@ -300,9 +306,15 @@ export function AllotmentManagementView({
     setIsProcessingAllotment(false);
     if (res.success) {
       setIsConfirmOpen(false);
+      toast.success(
+        "Allotment Statuses Updated",
+        `Successfully saved allotment outcomes for ${selectedIpo.name}.`
+      );
       router.refresh();
     } else {
-      setProcessError(res.error || "Failed to update allotment.");
+      const errMsg = res.error || "Failed to update allotment.";
+      setProcessError(errMsg);
+      toast.error("Failed to Update Allotment", errMsg);
     }
   }
 
@@ -318,7 +330,10 @@ export function AllotmentManagementView({
     setIsResetting(false);
     if (res.success) {
       setSelectedPanKeys([]);
+      toast.info("Allotment Reset", `Allotment status for ${selectedIpo.name} reset to awaiting.`);
       router.refresh();
+    } else {
+      toast.error("Failed to Reset Allotment", res.error || "Could not reset allotment.");
     }
   }
 
@@ -584,11 +599,33 @@ export function AllotmentManagementView({
               <CheckCircle2 className="h-6 w-6" />
             </div>
             <div className="space-y-1">
-              <h4 className="text-sm font-semibold text-zinc-200">No applications found</h4>
-              <p className="text-xs text-zinc-500 max-w-sm mx-auto">
-                No application records found for the selected filter or search query.
+              <h4 className="text-sm font-semibold text-zinc-200">
+                {searchQuery || activeFilter !== "ALL" ? "No applications found" : "No filings for this offering"}
+              </h4>
+              <p className="text-xs text-zinc-400 max-w-sm mx-auto">
+                {searchQuery || activeFilter !== "ALL"
+                  ? "Try adjusting your search query or status filter to locate application records."
+                  : "There are currently no member filings submitted for this offering."}
               </p>
             </div>
+            {(searchQuery || activeFilter !== "ALL") && (
+              <div className="pt-1">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    setSearchQuery("");
+                    setActiveFilter("ALL");
+                    applyFilters("", selectedIpo?.id || "DEFAULT", "ALL", activeSort, 1);
+                  }}
+                  className="h-8.5 px-4 text-xs font-medium border-zinc-700 bg-zinc-900 text-zinc-200 hover:bg-zinc-800 rounded-xl cursor-pointer active:scale-95 transition-all"
+                >
+                  <X className="h-3.5 w-3.5 mr-1 text-zinc-400" />
+                  Clear Filters
+                </Button>
+              </div>
+            )}
           </div>
         ) : (
           <div className="overflow-x-auto">
@@ -628,9 +665,10 @@ export function AllotmentManagementView({
                   return (
                     <tr
                       key={item.rowKey}
-                      className={`hover:bg-zinc-800/40 transition-colors group ${
-                        isSelected ? "bg-indigo-950/20" : ""
-                      }`}
+                      className={cn(
+                        "hover:bg-zinc-800/40 transition-colors duration-150 group",
+                        isSelected && "bg-indigo-950/20"
+                      )}
                     >
                       {/* Checkbox */}
                       <td className="py-3.5 px-4">
@@ -677,15 +715,26 @@ export function AllotmentManagementView({
                           <button
                             type="button"
                             onClick={() => copyToClipboard(item.panNumber)}
-                            className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-zinc-950 border border-zinc-800 hover:border-zinc-700 text-zinc-200 hover:text-white text-xs transition-colors cursor-pointer group/pan"
-                            title="Click to copy PAN"
+                            className={cn(
+                              "inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs transition-all duration-150 cursor-pointer group/pan active:scale-95",
+                              copiedPan === item.panNumber
+                                ? "bg-emerald-950/50 border-emerald-500/40 text-emerald-300"
+                                : "bg-zinc-950 border-zinc-800 hover:border-zinc-700 text-zinc-200 hover:text-white"
+                            )}
+                            title={copiedPan === item.panNumber ? "Copied!" : "Click to copy PAN"}
                           >
                             {copiedPan === item.panNumber ? (
-                              <Check className="h-3 w-3 text-emerald-400" />
+                              <>
+                                <Check className="h-3 w-3 text-emerald-400 animate-in zoom-in-75 duration-150" />
+                                <span className="tracking-wider text-emerald-300 font-semibold">{item.panNumber}</span>
+                                <span className="text-[9.5px] font-sans text-emerald-400 font-medium">Copied</span>
+                              </>
                             ) : (
-                              <Copy className="h-3 w-3 text-zinc-500 group-hover/pan:text-zinc-300" />
+                              <>
+                                <Copy className="h-3 w-3 text-zinc-500 group-hover/pan:text-zinc-300 transition-colors" />
+                                <span className="tracking-wider">{item.panNumber}</span>
+                              </>
                             )}
-                            <span className="tracking-wider">{item.panNumber}</span>
                           </button>
                         ) : (
                           <span className="text-zinc-600 font-mono text-xs">—</span>

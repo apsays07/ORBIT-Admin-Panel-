@@ -1126,6 +1126,69 @@ export async function deleteApplication(id: string): Promise<{ success: boolean;
 }
 
 /**
+ * Restore an application record (Undo deletion)
+ */
+export async function restoreApplication(
+  record: ApplicationRecord
+): Promise<{ success: boolean; error?: string }> {
+  try {
+    const adminUser = await verifyAdminSession();
+    const db = await getDatabase();
+    if (!db) {
+      return { success: false, error: "Database connection unavailable." };
+    }
+
+    if (!record || !record.id) {
+      return { success: false, error: "Invalid application record for restoration." };
+    }
+
+    // Clean MongoDB internal fields if any before re-inserting
+    const { _id, ...cleanRecord } = record as ApplicationRecord & { _id?: unknown };
+
+    await db.collection("applications").updateOne(
+      { id: record.id },
+      { $set: cleanRecord },
+      { upsert: true }
+    );
+
+    // Audit log
+    await logAuditEvent({
+      eventType: "APPLICATION_RESTORED",
+      category: "APPLICATION",
+      severity: "INFO",
+      actorUsername: adminUser,
+      actorRole: "ADMIN",
+      targetType: "APPLICATION",
+      targetId: record.id,
+      targetName: `${record.applicantName} - ${record.ipoName}`,
+      title: `Restored Application ${record.id}`,
+      subtitle: `Admin undone deletion of application filing (${record.applicantName})`,
+      metadata: {
+        id: record.id,
+        applicantName: record.applicantName,
+        ipoId: record.ipoId,
+        ipoName: record.ipoName,
+        panNumbers: record.panNumbers,
+      },
+    });
+
+    revalidatePath("/ad/applications");
+    revalidatePath("/ad/allotment");
+    revalidatePath("/ad/members");
+    revalidatePath("/ad/ipo");
+    revalidatePath("/ad/audit");
+
+    console.info(`[ORBIT][RESTORE_APP] Application ${record.id} restored by ${adminUser}`);
+
+    return { success: true };
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : "Failed to restore application.";
+    console.error("[ORBIT][RESTORE_APP] Error:", message);
+    return { success: false, error: message };
+  }
+}
+
+/**
  * Fetch ALL application records for an IPO (without pagination capping) specifically for exporting / copying
  */
 export async function getAllIpoApplicationsForCopy(ipoId?: string): Promise<{

@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useRef, useTransition } from "react";
+import React, { useState, useRef, useTransition, useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { MemberData, MemberRosterMetrics } from "@/types/member";
@@ -21,6 +21,9 @@ import {
   CreditCard,
   Building,
   KeyRound,
+  Copy,
+  Check,
+  Loader2,
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -31,6 +34,7 @@ import { CreateMemberModal } from "@/components/member/create-member-modal";
 import { DeleteMemberModal } from "@/components/member/delete-member-modal";
 import { ResetPasswordModal } from "@/components/member/reset-password-modal";
 import { bulkUpdateMemberStatus, bulkDeleteMembers } from "@/lib/member/actions";
+import { Tooltip } from "@/components/ui/tooltip";
 import { useToast } from "@/components/ui/toast";
 import { cn } from "@/lib/utils";
 
@@ -60,6 +64,8 @@ export function MemberManagementView({
   const [activeRoleFilter, setActiveRoleFilter] = useState(searchParams.get("role") || "ALL");
   const [activeStatusFilter, setActiveStatusFilter] = useState(searchParams.get("status") || "ALL");
   const debounceTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const searchInputRef = useRef<HTMLInputElement>(null);
+  const [copiedUsername, setCopiedUsername] = useState<string | null>(null);
 
   // Modals state
   const [editingMember, setEditingMember] = useState<MemberData | null>(null);
@@ -71,6 +77,27 @@ export function MemberManagementView({
   React.useEffect(() => {
     setMembersList(initialMembers);
   }, [initialMembers]);
+
+  // Global Ctrl+K / Cmd+K shortcut to focus member search
+  useEffect(() => {
+    function handleGlobalKeyDown(e: KeyboardEvent) {
+      if ((e.metaKey || e.ctrlKey) && e.key === "k") {
+        e.preventDefault();
+        searchInputRef.current?.focus();
+        searchInputRef.current?.select();
+      } else if (
+        e.key === "/" &&
+        document.activeElement?.tagName !== "INPUT" &&
+        document.activeElement?.tagName !== "TEXTAREA" &&
+        document.activeElement?.tagName !== "SELECT"
+      ) {
+        e.preventDefault();
+        searchInputRef.current?.focus();
+      }
+    }
+    window.addEventListener("keydown", handleGlobalKeyDown);
+    return () => window.removeEventListener("keydown", handleGlobalKeyDown);
+  }, []);
 
   function applyFilters(newQuery: string, newRole: string, newStatus: string, newPage: number = 1) {
     const params = new URLSearchParams();
@@ -208,34 +235,24 @@ export function MemberManagementView({
     router.refresh();
   }
 
-  function getCardGlowStyles(role: string, index: number) {
+  function getCardGlowStyles(role: string, _index: number) {
     if (role === "SUPER_ADMIN" || role === "ADMIN") {
       return {
-        cardBorder: "border-sky-500/40 hover:border-sky-400/80 bg-zinc-900/90 shadow-[0_0_25px_-5px_rgba(14,165,233,0.15)]",
-        avatarRing: "ring-2 ring-sky-500 shadow-[0_0_15px_rgba(14,165,233,0.5)]",
-        badge: "bg-sky-950/90 text-sky-300 border-sky-800",
+        cardBorder: "border-zinc-800 hover:border-zinc-700 bg-zinc-900/50 shadow-xs",
+        avatarRing: "border border-zinc-700",
+        badge: "bg-sky-500/10 text-sky-400 border-sky-500/20",
         accent: "text-sky-400",
-        subBox: "bg-zinc-950/80 border-zinc-800/80",
+        subBox: "bg-zinc-950 border-zinc-800/80",
         indicator: "bg-sky-400",
       };
     }
-    if (index % 2 === 0) {
-      return {
-        cardBorder: "border-emerald-500/30 hover:border-emerald-400/70 bg-zinc-900/90 shadow-[0_0_25px_-5px_rgba(160,185,129,0.12)]",
-        avatarRing: "ring-2 ring-emerald-500 shadow-[0_0_15px_rgba(16,185,129,0.4)]",
-        badge: "bg-emerald-950/90 text-emerald-300 border-emerald-800",
-        accent: "text-emerald-400",
-        subBox: "bg-zinc-950/80 border-zinc-800/80",
-        indicator: "bg-emerald-400",
-      };
-    }
     return {
-      cardBorder: "border-purple-500/30 hover:border-purple-400/70 bg-zinc-900/90 shadow-[0_0_25px_-5px_rgba(168,85,247,0.12)]",
-      avatarRing: "ring-2 ring-purple-500 shadow-[0_0_15px_rgba(168,85,247,0.4)]",
-      badge: "bg-purple-950/90 text-purple-300 border-purple-800",
-      accent: "text-purple-400",
-      subBox: "bg-zinc-950/80 border-zinc-800/80",
-      indicator: "bg-purple-400",
+      cardBorder: "border-zinc-800 hover:border-zinc-700 bg-zinc-900/50 shadow-xs",
+      avatarRing: "border border-zinc-700",
+      badge: "bg-zinc-800 text-zinc-300 border-zinc-700",
+      accent: "text-zinc-300",
+      subBox: "bg-zinc-950 border-zinc-800/80",
+      indicator: "bg-emerald-400",
     };
   }
 
@@ -371,7 +388,7 @@ export function MemberManagementView({
               type="button"
               onClick={() => handleStatusFilter("ALL")}
               className={cn(
-                "px-2.5 py-1 rounded-lg text-xs font-medium transition-all cursor-pointer",
+                "px-2.5 py-1 rounded-lg text-xs font-medium transition-all duration-150 cursor-pointer active:scale-[0.97]",
                 activeStatusFilter === "ALL" ? "bg-zinc-800 text-zinc-100 font-semibold shadow-xs" : "text-zinc-400 hover:text-zinc-200"
               )}
             >
@@ -381,7 +398,7 @@ export function MemberManagementView({
               type="button"
               onClick={() => handleStatusFilter("ACTIVE")}
               className={cn(
-                "px-2.5 py-1 rounded-lg text-xs font-medium transition-all cursor-pointer",
+                "px-2.5 py-1 rounded-lg text-xs font-medium transition-all duration-150 cursor-pointer active:scale-[0.97]",
                 activeStatusFilter === "ACTIVE" ? "bg-emerald-950 text-emerald-300 border border-emerald-800 font-semibold shadow-xs" : "text-zinc-400 hover:text-zinc-200"
               )}
             >
@@ -391,7 +408,7 @@ export function MemberManagementView({
               type="button"
               onClick={() => handleStatusFilter("SUSPENDED")}
               className={cn(
-                "px-2.5 py-1 rounded-lg text-xs font-medium transition-all cursor-pointer",
+                "px-2.5 py-1 rounded-lg text-xs font-medium transition-all duration-150 cursor-pointer active:scale-[0.97]",
                 activeStatusFilter === "SUSPENDED" ? "bg-amber-950 text-amber-300 border border-amber-800 font-semibold shadow-xs" : "text-zinc-400 hover:text-zinc-200"
               )}
             >
@@ -401,7 +418,7 @@ export function MemberManagementView({
               type="button"
               onClick={() => handleStatusFilter("BLOCKED")}
               className={cn(
-                "px-2.5 py-1 rounded-lg text-xs font-medium transition-all cursor-pointer",
+                "px-2.5 py-1 rounded-lg text-xs font-medium transition-all duration-150 cursor-pointer active:scale-[0.97]",
                 activeStatusFilter === "BLOCKED" ? "bg-rose-950 text-rose-300 border border-rose-800 font-semibold shadow-xs" : "text-zinc-400 hover:text-zinc-200"
               )}
             >
@@ -413,19 +430,41 @@ export function MemberManagementView({
         {/* Search and Role Filters Bar */}
         <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
           <form onSubmit={handleSearchSubmit} className="relative flex-1">
-            <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-zinc-500" />
+            <Search className={cn("absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 transition-colors duration-150", searchQuery ? "text-indigo-400" : "text-zinc-500")} />
             <Input
+              ref={searchInputRef}
               type="text"
               value={searchQuery}
               onChange={(e) => handleSearchChange(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Escape") {
+                  handleClearSearch();
+                }
+              }}
               placeholder="Search member by name, @username, email, phone, or PAN..."
-              className="pl-10 pr-9 h-10 bg-zinc-900/90 border-zinc-800 text-xs text-zinc-100 placeholder:text-zinc-500 rounded-xl focus-visible:ring-indigo-600 shadow-xs"
+              className="pl-10 pr-16 h-10 bg-zinc-900/90 border-zinc-800 text-xs text-zinc-100 placeholder:text-zinc-500 rounded-xl focus-visible:ring-1 focus-visible:ring-indigo-500/40 focus-visible:border-indigo-500/50 shadow-xs transition-colors duration-150"
             />
-            {searchQuery && (
+            {/* ⌘K hint shown when empty */}
+            {!searchQuery && (
+              <div className="absolute right-3 top-1/2 -translate-y-1/2 hidden sm:flex items-center pointer-events-none z-10 select-none">
+                <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-zinc-800/80 border border-zinc-700/60 text-zinc-400">
+                  ⌘K
+                </span>
+              </div>
+            )}
+            {/* Loading spinner while filtering */}
+            {isPending && searchQuery && (
+              <span className="absolute right-3.5 top-1/2 -translate-y-1/2 z-10">
+                <Loader2 className="h-3.5 w-3.5 animate-spin text-indigo-400" />
+              </span>
+            )}
+            {/* Clear button */}
+            {!isPending && searchQuery && (
               <button
                 type="button"
                 onClick={handleClearSearch}
-                className="absolute right-3 top-1/2 -translate-y-1/2 p-1 text-zinc-500 hover:text-zinc-200 cursor-pointer"
+                className="absolute right-3 top-1/2 -translate-y-1/2 p-1 text-zinc-500 hover:text-zinc-200 hover:bg-zinc-800/80 rounded-md cursor-pointer transition-all duration-150 z-10 active:scale-95"
+                aria-label="Clear search"
               >
                 <X className="h-3.5 w-3.5" />
               </button>
@@ -560,11 +599,34 @@ export function MemberManagementView({
               <Users className="h-6 w-6" />
             </div>
             <div className="space-y-1">
-              <h4 className="text-sm font-semibold text-zinc-200">No members found</h4>
-              <p className="text-xs text-zinc-500 max-w-sm mx-auto">
-                No member records match your search or filter parameters.
+              <h4 className="text-sm font-semibold text-zinc-200">
+                {searchQuery.trim() ? "No members found" : "No matching members"}
+              </h4>
+              <p className="text-xs text-zinc-400 max-w-sm mx-auto">
+                {searchQuery.trim()
+                  ? "Try searching with a different name, @username, or phone number."
+                  : "No member records match the selected role or status filters."}
               </p>
             </div>
+            {(searchQuery.trim() || activeRoleFilter !== "ALL" || activeStatusFilter !== "ALL") && (
+              <div className="pt-1">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    setSearchQuery("");
+                    setActiveRoleFilter("ALL");
+                    setActiveStatusFilter("ALL");
+                    applyFilters("", "ALL", "ALL", 1);
+                  }}
+                  className="h-8.5 px-4 text-xs font-medium border-zinc-700 bg-zinc-900 text-zinc-200 hover:bg-zinc-800 rounded-xl cursor-pointer active:scale-95 transition-all"
+                >
+                  <X className="h-3.5 w-3.5 mr-1 text-zinc-400" />
+                  Clear Filters
+                </Button>
+              </div>
+            )}
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
@@ -579,7 +641,7 @@ export function MemberManagementView({
                 <div
                   key={member.id}
                   className={cn(
-                    "p-5 rounded-2xl border transition-all duration-200 relative flex flex-col justify-between space-y-4.5",
+                    "p-5 rounded-2xl border transition-all duration-200 relative flex flex-col justify-between space-y-4.5 hover:shadow-md hover:-translate-y-[1px]",
                     glow.cardBorder,
                     isSelected && "ring-2 ring-indigo-500 bg-indigo-950/20"
                   )}
@@ -618,9 +680,31 @@ export function MemberManagementView({
                           </div>
 
                           <div className="flex flex-wrap items-center gap-1.5">
-                            <span className="px-2 py-0.5 rounded bg-zinc-950/80 border border-zinc-800 text-zinc-300 text-[11px] font-mono">
-                              @{member.username}
-                            </span>
+                            <Tooltip content={copiedUsername === member.username ? "Copied!" : "Copy username"} side="top">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  navigator.clipboard.writeText(`@${member.username}`).then(() => {
+                                    setCopiedUsername(member.username);
+                                    setTimeout(() => setCopiedUsername(null), 1800);
+                                  });
+                                }}
+                                className={cn(
+                                  "group/un inline-flex items-center gap-1.5 px-2 py-0.5 rounded border text-[11px] font-mono cursor-pointer transition-all duration-150 active:scale-95",
+                                  copiedUsername === member.username
+                                    ? "bg-emerald-950/40 border-emerald-700/50 text-emerald-300"
+                                    : "bg-zinc-950/80 border-zinc-800 text-zinc-300 hover:border-zinc-700 hover:text-zinc-100"
+                                )}
+                                aria-label={`Copy @${member.username}`}
+                              >
+                                {copiedUsername === member.username ? (
+                                  <Check className="h-2.5 w-2.5 text-emerald-400 shrink-0 animate-in zoom-in-75 duration-150" />
+                                ) : (
+                                  <Copy className="h-2.5 w-2.5 text-zinc-600 group-hover/un:text-zinc-400 shrink-0 transition-colors" />
+                                )}
+                                @{member.username}
+                              </button>
+                            </Tooltip>
                             {member.phone && (
                               <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-zinc-950/80 border border-zinc-800 text-zinc-400 text-[11px] font-sans">
                                 <Phone className="h-2.5 w-2.5" />
@@ -668,39 +752,45 @@ export function MemberManagementView({
                   {/* Footer Action Cluster */}
                   <div className="flex items-center justify-between pt-3 border-t border-zinc-800/60 text-xs">
                     <div className="flex items-center gap-1.5">
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => setEditingMember(member)}
-                        className="h-8 px-2.5 text-xs text-sky-400 hover:text-sky-300 hover:bg-sky-950/30 rounded-lg flex items-center gap-1 cursor-pointer"
-                      >
-                        <Edit2 className="h-3 w-3" />
-                        <span>Edit</span>
-                      </Button>
-
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => setPasswordResetMember(member)}
-                        className="h-8 w-8 p-0 text-zinc-500 hover:text-rose-400 hover:bg-rose-950/20 rounded-lg flex items-center justify-center cursor-pointer"
-                        title="Reset Member Password"
-                      >
-                        <KeyRound className="h-3.5 w-3.5" />
-                      </Button>
-
-                      {!isCurrentUser && (
+                      <Tooltip content="Edit member profile" side="top">
                         <Button
                           type="button"
                           variant="ghost"
                           size="sm"
-                          onClick={() => setDeletingMember(member)}
-                          className="h-8 w-8 p-0 text-zinc-500 hover:text-rose-400 hover:bg-rose-950/20 rounded-lg flex items-center justify-center cursor-pointer"
-                          title="Delete / Deactivate Member"
+                          onClick={() => setEditingMember(member)}
+                          className="h-8 px-2.5 text-xs text-sky-400 hover:text-sky-300 hover:bg-sky-950/30 rounded-lg flex items-center gap-1 cursor-pointer transition-all duration-150 active:scale-95"
                         >
-                          <Trash2 className="h-3.5 w-3.5" />
+                          <Edit2 className="h-3 w-3" />
+                          <span>Edit</span>
                         </Button>
+                      </Tooltip>
+
+                      <Tooltip content="Reset member password" side="top">
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => setPasswordResetMember(member)}
+                          className="h-8 w-8 p-0 text-zinc-500 hover:text-rose-400 hover:bg-rose-950/20 rounded-lg flex items-center justify-center cursor-pointer transition-all duration-150 active:scale-95"
+                          aria-label="Reset Member Password"
+                        >
+                          <KeyRound className="h-3.5 w-3.5" />
+                        </Button>
+                      </Tooltip>
+
+                      {!isCurrentUser && (
+                        <Tooltip content="Delete or deactivate member" side="top">
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => setDeletingMember(member)}
+                            className="h-8 w-8 p-0 text-zinc-500 hover:text-rose-400 hover:bg-rose-950/20 rounded-lg flex items-center justify-center cursor-pointer transition-all duration-150 active:scale-95"
+                            aria-label="Delete Member"
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </Button>
+                        </Tooltip>
                       )}
                     </div>
 

@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { KbdEnter } from "@/components/ui/kbd";
 import {
   ShieldCheck,
   Lock,
@@ -123,6 +124,7 @@ export function LoginForm({ dbStatus }: LoginFormProps) {
                 <>
                   <span>Sign In</span>
                   <ArrowRight className="h-4 w-4" />
+                  <KbdEnter className="bg-blue-700/80 border-blue-400/40 text-blue-100" />
                 </>
               )}
             </Button>

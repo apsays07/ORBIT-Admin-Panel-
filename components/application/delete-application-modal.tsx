@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { ApplicationRecord } from "@/types/application";
 import { deleteApplication } from "@/lib/application/actions";
 import { useToast } from "@/components/ui/toast";
@@ -14,6 +14,8 @@ import {
   CreditCard,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { useModalKeyboardShortcuts } from "@/lib/hooks/use-keyboard-shortcuts";
+import { KbdEnter, KbdEsc } from "@/components/ui/kbd";
 
 interface DeleteApplicationModalProps {
   isOpen: boolean;
@@ -32,20 +34,19 @@ export function DeleteApplicationModal({
   const [isDeleting, setIsDeleting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
+  const cancelButtonRef = useRef<HTMLButtonElement>(null);
+
   useEffect(() => {
     setErrorMessage(null);
   }, [isOpen, application]);
 
-  // Keyboard Escape listener
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "Escape" && isOpen && !isDeleting) {
-        onClose();
-      }
-    };
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [isOpen, isDeleting, onClose]);
+  useModalKeyboardShortcuts({
+    isOpen,
+    onClose,
+    onConfirm: handleDelete,
+    isSubmitting: isDeleting,
+    initialFocusRef: cancelButtonRef,
+  });
 
   if (!isOpen || !application) return null;
 
@@ -58,10 +59,6 @@ export function DeleteApplicationModal({
     try {
       const res = await deleteApplication(application.id);
       if (res.success) {
-        toast.success(
-          "Application Deleted",
-          `Application ${application.id} for ${application.applicantName} was permanently removed.`
-        );
         onDeleted(application.id);
         onClose();
       } else {
@@ -81,25 +78,20 @@ export function DeleteApplicationModal({
     <div
       role="dialog"
       aria-modal="true"
-      className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-4 animate-in fade-in duration-150 font-sans"
+      className="fixed inset-0 z-50 bg-black/80 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in duration-150 font-sans"
     >
-      <div className="relative w-full max-w-md bg-zinc-950/95 border border-zinc-800/90 rounded-3xl shadow-[0_25px_70px_rgba(0,0,0,0.9)] text-zinc-100 p-6 flex flex-col gap-4 backdrop-blur-xl">
-        {/* Ambient Top Line */}
-        <div className="absolute top-0 inset-x-0 h-[2px] bg-gradient-to-r from-transparent via-rose-500/60 to-transparent" />
-
+      <div className="relative w-full max-w-md bg-zinc-950 border border-zinc-800 rounded-xl shadow-2xl text-zinc-100 p-5 flex flex-col gap-3.5">
         {/* Modal Top Row */}
         <div className="flex items-start justify-between">
-          <div className="flex items-center gap-3">
-            <div className="w-11 h-11 rounded-2xl bg-rose-500/10 border border-rose-500/20 text-rose-400 flex items-center justify-center shrink-0">
-              <AlertTriangle className="h-5 w-5" />
+          <div className="flex items-center gap-2.5">
+            <div className="h-7 w-7 rounded-md bg-rose-500/10 border border-rose-500/20 text-rose-400 flex items-center justify-center shrink-0">
+              <AlertTriangle className="h-4 w-4" />
             </div>
             <div>
-              <span className="text-[10px] font-semibold tracking-wider px-2 py-0.5 rounded-md bg-rose-500/10 text-rose-400 border border-rose-500/20 font-mono uppercase">
-                CONFIRM DELETION
-              </span>
-              <h3 className="text-lg font-semibold text-zinc-100 tracking-tight mt-0.5">
-                Delete Application?
+              <h3 className="text-sm font-semibold text-zinc-100 tracking-tight">
+                Delete Application
               </h3>
+              <p className="text-[11px] text-zinc-500">Confirm irreversible removal of application record</p>
             </div>
           </div>
 
@@ -107,28 +99,28 @@ export function DeleteApplicationModal({
             type="button"
             onClick={onClose}
             disabled={isDeleting}
-            className="p-1.5 rounded-xl text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800/80 transition-colors cursor-pointer"
+            className="p-1 rounded-md text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800 transition-colors cursor-pointer"
           >
             <X className="h-4 w-4" />
           </button>
         </div>
 
         {/* Application Details Summary Card */}
-        <div className="p-4 rounded-2xl bg-zinc-900/60 border border-zinc-800/80 space-y-2 text-xs">
+        <div className="p-3 rounded-lg bg-zinc-900 border border-zinc-800 space-y-1.5 text-xs">
           <div className="flex items-center justify-between">
             <span className="text-zinc-400 flex items-center gap-1.5 font-sans">
-              <FileText className="h-3.5 w-3.5 text-zinc-500" />
+              <FileText className="h-3 w-3 text-zinc-500" />
               Application ID:
             </span>
-            <span className="font-mono font-semibold text-zinc-200">{application.id}</span>
+            <span className="font-mono font-medium text-zinc-200">{application.id}</span>
           </div>
 
           <div className="flex items-center justify-between">
             <span className="text-zinc-400 flex items-center gap-1.5 font-sans">
-              <User className="h-3.5 w-3.5 text-zinc-500" />
+              <User className="h-3 w-3 text-zinc-500" />
               Applicant User:
             </span>
-            <span className="font-semibold text-zinc-100 font-sans">{application.applicantName}</span>
+            <span className="font-medium text-zinc-100 font-sans">{application.applicantName}</span>
           </div>
 
           <div className="flex items-center justify-between">
@@ -138,7 +130,7 @@ export function DeleteApplicationModal({
 
           <div className="flex items-center justify-between">
             <span className="text-zinc-400 flex items-center gap-1.5 font-sans">
-              <CreditCard className="h-3.5 w-3.5 text-zinc-500" />
+              <CreditCard className="h-3 w-3 text-zinc-500" />
               PAN Card(s):
             </span>
             <span className="font-mono text-zinc-300">
@@ -147,45 +139,41 @@ export function DeleteApplicationModal({
           </div>
         </div>
 
-        <p className="text-[12.5px] text-zinc-400 leading-relaxed font-sans">
+        <p className="text-[11.5px] text-zinc-400 leading-normal font-sans">
           Are you sure you want to permanently delete this application? This action cannot be undone and will remove all allocation records linked to this filing.
         </p>
 
         {errorMessage && (
-          <div className="p-3 rounded-xl bg-rose-950/40 border border-rose-900/60 text-rose-300 text-xs font-medium">
+          <div className="p-2.5 rounded-md bg-rose-950/30 border border-rose-800/50 text-rose-300 text-xs font-medium">
             {errorMessage}
           </div>
         )}
 
         {/* Action Buttons */}
-        <div className="flex items-center justify-end gap-2.5 pt-2 border-t border-zinc-900">
+        <div className="flex items-center justify-end gap-2 pt-1 border-t border-zinc-800">
           <Button
+            ref={cancelButtonRef}
             type="button"
             variant="outline"
             onClick={onClose}
             disabled={isDeleting}
-            className="h-9.5 px-4 text-xs font-medium border-zinc-800 bg-zinc-900 text-zinc-300 hover:bg-zinc-800 rounded-xl cursor-pointer"
+            className="h-8 px-3 text-xs font-medium border-zinc-800 text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800 rounded-md cursor-pointer flex items-center gap-2"
           >
-            Cancel
+            <span>Cancel</span>
+            <KbdEsc />
           </Button>
 
           <Button
             type="button"
             onClick={handleDelete}
             disabled={isDeleting}
-            className="h-9.5 px-4 text-xs font-semibold bg-rose-600 hover:bg-rose-500 text-white rounded-xl shadow-lg shadow-rose-600/20 flex items-center gap-1.5 cursor-pointer transition-all"
+            isLoading={isDeleting}
+            loadingText="Deleting..."
+            className="h-8 min-w-[140px] px-3.5 text-xs font-medium bg-rose-600 hover:bg-rose-500 text-white rounded-md flex items-center justify-center gap-1.5 cursor-pointer transition-colors"
           >
-            {isDeleting ? (
-              <>
-                <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                <span>Deleting...</span>
-              </>
-            ) : (
-              <>
-                <Trash2 className="h-3.5 w-3.5" />
-                <span>Delete Application</span>
-              </>
-            )}
+            <Trash2 className="h-3 w-3" />
+            <span>Delete Application</span>
+            <KbdEnter label="Confirm" className="bg-black/30 border-white/20 text-white" />
           </Button>
         </div>
       </div>

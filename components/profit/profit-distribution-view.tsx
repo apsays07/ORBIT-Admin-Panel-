@@ -28,6 +28,15 @@ import { Card } from "@/components/ui/card";
 import { MemberAvatar } from "@/components/ui/member-avatar";
 import { cn } from "@/lib/utils";
 import { OfferingSelectDropdown } from "@/components/ui/offering-select-dropdown";
+import { useToast } from "@/components/ui/toast";
+import {
+  calculatePerLotProfit,
+  calculateMemberPayoutProfit,
+  calculateLotsFromContribution,
+  formatCurrency,
+  formatLots,
+  normalizeNumeric,
+} from "@/lib/calculations";
 
 interface ProfitDistributionViewProps {
   data: ProfitDistributionViewData;
@@ -38,6 +47,7 @@ export function ProfitDistributionView({
   data,
   initialIpoId,
 }: ProfitDistributionViewProps) {
+  const toast = useToast();
   const router = useRouter();
   const searchParams = useSearchParams();
   const [, startTransition] = useTransition();
@@ -85,36 +95,32 @@ export function ProfitDistributionView({
 
   // Dynamically calculate live profit as admin types or fallback to published/default
   const effectiveNumericProfit = realizedProfitInput !== ""
-    ? (parseFloat(realizedProfitInput) || 0)
+    ? normalizeNumeric(realizedProfitInput, 0)
     : (defaultProfitValue > 0 ? defaultProfitValue : 0);
 
   const numericProfit = effectiveNumericProfit;
-  const numericLots = parseInt(allottedLotsInput, 10) || allottedLots || totalAppliedLots || 1;
+  const numericLots = normalizeNumeric(allottedLotsInput, allottedLots || totalAppliedLots || 1);
 
   // Live per lot profit recalculation
-  const isInputDirty = realizedProfitInput !== "" && parseFloat(realizedProfitInput) !== defaultProfitValue;
+  const isInputDirty = realizedProfitInput !== "" && normalizeNumeric(realizedProfitInput, 0) !== defaultProfitValue;
   const livePerLotProfit = (!isInputDirty && isPublished && initialPerLotProfit > 0)
     ? initialPerLotProfit
-    : (totalAppliedLots > 0
-        ? Math.floor(numericProfit / totalAppliedLots)
-        : initialPerLotProfit || 0);
+    : calculatePerLotProfit(numericProfit, totalAppliedLots);
 
   const isModified = Boolean(
     isPublished && (
-      (realizedProfitInput !== "" && parseFloat(realizedProfitInput) !== defaultProfitValue) ||
-      (parseInt(allottedLotsInput, 10) !== (allottedLots || totalAppliedLots))
+      (realizedProfitInput !== "" && normalizeNumeric(realizedProfitInput, 0) !== defaultProfitValue) ||
+      (normalizeNumeric(allottedLotsInput, 0) !== (allottedLots || totalAppliedLots))
     )
   );
 
-  const minInvest = (selectedIpo?.metrics?.minInvestment && selectedIpo.metrics.minInvestment > 0)
-    ? selectedIpo.metrics.minInvestment
-    : 1;
+  const minInvest = normalizeNumeric(selectedIpo?.metrics?.minInvestment, 15000);
 
   // Live recalculated member rows
   const liveMembers = members.map((m) => {
     if (!isInputDirty && isPublished && m.profit > 0) return m;
-    const effLots = m.lots > 0 ? m.lots : (minInvest > 0 ? m.contribution / minInvest : 1);
-    const calcProfit = Math.round(effLots * livePerLotProfit);
+    const effLots = m.lots > 0 ? m.lots : calculateLotsFromContribution(m.contribution, minInvest);
+    const calcProfit = calculateMemberPayoutProfit(effLots, livePerLotProfit);
     return {
       ...m,
       profit: calcProfit,
@@ -163,18 +169,31 @@ export function ProfitDistributionView({
     setIsPublishing(true);
     setPublishError(null);
 
-    const res = await publishProfitDistribution(
-      selectedIpo.id,
-      numericProfit,
-      parseInt(allottedLotsInput, 10) || totalAppliedLots
-    );
+    try {
+      const res = await publishProfitDistribution(
+        selectedIpo.id,
+        numericProfit,
+        parseInt(allottedLotsInput, 10) || totalAppliedLots
+      );
 
-    setIsPublishing(false);
-    if (res.success) {
-      setIsConfirmOpen(false);
-      router.refresh();
-    } else {
-      setPublishError(res.error || "Failed to publish profit.");
+      if (res.success) {
+        setIsConfirmOpen(false);
+        toast.success(
+          isPublished ? "Profit Distribution Republished" : "Profit Distribution Published",
+          `₹${numericProfit.toLocaleString("en-IN")} distributed across ${members.length} members for ${selectedIpo.name}.`
+        );
+        router.refresh();
+      } else {
+        const errMsg = res.error || "Failed to publish profit.";
+        setPublishError(errMsg);
+        toast.error("Failed to Publish Profit", errMsg);
+      }
+    } catch (err: unknown) {
+      const errMsg = err instanceof Error ? err.message : "An unexpected server error occurred.";
+      setPublishError(errMsg);
+      toast.error("Server Error", errMsg);
+    } finally {
+      setIsPublishing(false);
     }
   }
 
