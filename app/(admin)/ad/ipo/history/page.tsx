@@ -28,7 +28,16 @@ export default async function IpoHistoryPage({ searchParams }: HistoryPageProps)
   const sortField = resolvedParams.sort || "closeDate";
   const sortOrder = resolvedParams.order || "desc";
 
-  const { ipos, total, totalPages, availableStatuses, metricsSummary } = await getHistoricalIpos({
+  const {
+    ipos,
+    total,
+    totalPages,
+    availableStatuses,
+    metricsSummary,
+    analyticsData,
+    rawHistoricalIpos,
+    rawHistoricalApps,
+  } = await getHistoricalIpos({
     query,
     status,
     category,
@@ -46,6 +55,9 @@ export default async function IpoHistoryPage({ searchParams }: HistoryPageProps)
       totalPages={totalPages}
       availableStatuses={availableStatuses}
       metricsSummary={metricsSummary}
+      initialAnalyticsData={analyticsData}
+      rawHistoricalIpos={rawHistoricalIpos}
+      rawHistoricalApps={rawHistoricalApps}
     />
   );
 }

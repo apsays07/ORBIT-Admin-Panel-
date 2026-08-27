@@ -17,6 +17,11 @@ export interface GetIposParams {
   sortOrder?: "asc" | "desc";
 }
 
+import {
+  IpoHistoryAnalyticsData,
+  aggregateHistoricalIpos,
+} from "@/lib/calculations";
+
 export interface GetIposResponse {
   ipos: NexoIPORecord[];
   total: number;
@@ -34,6 +39,9 @@ export interface GetIposResponse {
     totalIposApplied?: number;
     allotmentRatePercentage: number;
   };
+  analyticsData?: IpoHistoryAnalyticsData;
+  rawHistoricalIpos?: any[];
+  rawHistoricalApps?: any[];
 }
 
 /**
@@ -131,10 +139,8 @@ export async function getHistoricalIpos(params: GetIposParams = {}): Promise<Get
   const [
     distinctStatusesRaw,
     [historyFacetRaw],
-    globalHistoryStats,
-    totalApplicationsAggregate,
-    allottedApplicationsAggregate,
-    distinctAppliedIposRaw,
+    allRawIpos,
+    allRawApps,
   ] = await Promise.all([
     collection.distinct("status"),
     collection
@@ -153,60 +159,68 @@ export async function getHistoricalIpos(params: GetIposParams = {}): Promise<Get
       ])
       .toArray(),
     collection
-      .aggregate<{
-        totalProfit: number;
-        completedCount: number;
-        allotmentCount: number;
-      }>([
+      .find(
+        {},
         {
-          $group: {
-            _id: null,
-            totalProfit: { $sum: { $ifNull: ["$profitDistribution.totalProfit", 0] } },
-            completedCount: {
-              $sum: { $cond: [{ $in: ["$status", ["COMPLETED", "LISTED", "CLOSED"]] }, 1, 0] },
-            },
-            allotmentCount: {
-              $sum: { $cond: [{ $eq: ["$allotmentFinalized", true] }, 1, 0] },
-            },
+          projection: {
+            _id: 0,
+            id: 1,
+            name: 1,
+            category: 1,
+            status: 1,
+            metrics: 1,
+            profitDistribution: 1,
+            createdAt: 1,
           },
-        },
-      ])
+        }
+      )
       .toArray(),
-    db.collection("applications").aggregate<{ total: number }>([
-      { $group: { _id: null, total: { $sum: { $ifNull: ["$numberOfPanCards", 1] } } } },
-    ]).toArray(),
-    db.collection("applications").aggregate<{ total: number }>([
-      {
-        $project: {
-          allottedPans: {
-            $cond: [
-              { $or: [{ $eq: ["$status", "ALLOTTED"] }, { $eq: ["$allotmentStatus", "ALLOTTED"] }] },
-              {
-                $let: {
-                  vars: {
-                    arr: {
-                      $cond: [{ $isArray: "$allottedIndices" }, "$allottedIndices", []],
-                    },
-                  },
-                  in: {
-                    $cond: [{ $gt: [{ $size: "$$arr" }, 0] }, { $size: "$$arr" }, 1],
-                  },
-                },
-              },
-              0,
-            ],
+    db
+      .collection("applications")
+      .find(
+        {},
+        {
+          projection: {
+            _id: 0,
+            id: 1,
+            ipoId: 1,
+            numberOfPanCards: 1,
+            panNumbers: 1,
+            totalContribution: 1,
+            status: 1,
+            allotmentStatus: 1,
+            allottedIndices: 1,
+            createdAt: 1,
           },
-        },
-      },
-      {
-        $group: {
-          _id: null,
-          total: { $sum: "$allottedPans" },
-        },
-      },
-    ]).toArray(),
-    db.collection("applications").distinct("ipoId"),
+        }
+      )
+      .toArray(),
   ]);
+
+  const rawHistoricalIpos = allRawIpos.map((doc: any) => ({
+    id: doc.id,
+    name: doc.name,
+    category: doc.category || "Mainboard",
+    status: doc.status || "COMPLETED",
+    metrics: doc.metrics,
+    profitDistribution: doc.profitDistribution,
+    createdAt: doc.createdAt,
+  }));
+
+  const rawHistoricalApps = allRawApps.map((app: any) => ({
+    id: app.id,
+    ipoId: app.ipoId,
+    numberOfPanCards: app.numberOfPanCards,
+    panNumbers: app.panNumbers,
+    totalContribution: app.totalContribution,
+    status: app.status,
+    allotmentStatus: app.allotmentStatus,
+    allottedIndices: app.allottedIndices,
+    createdAt: app.createdAt,
+  }));
+
+  // Authoritative real-data analytics calculation
+  const analyticsData = aggregateHistoricalIpos(rawHistoricalIpos, rawHistoricalApps, "ALL");
 
   function parseIpoDateTimestamp(doc: NexoIPORecord): number {
     if (doc.metrics?.closeDate) {
@@ -261,16 +275,6 @@ export async function getHistoricalIpos(params: GetIposParams = {}): Promise<Get
     _id: doc._id?.toString(),
   }));
 
-  const stats = globalHistoryStats[0] || { totalProfit: 0, completedCount: 0, allotmentCount: 0 };
-  const totalApplicationsCount = totalApplicationsAggregate[0]?.total || 0;
-  const allottedApplicationsCount = allottedApplicationsAggregate[0]?.total || 0;
-  const totalIposAppliedCount = Array.isArray(distinctAppliedIposRaw) ? distinctAppliedIposRaw.filter(Boolean).length : 0;
-
-  const allotmentRatePercentage =
-    totalApplicationsCount > 0
-      ? Number(((allottedApplicationsCount / totalApplicationsCount) * 100).toFixed(1))
-      : 0;
-
   return {
     ipos,
     total,
@@ -279,15 +283,18 @@ export async function getHistoricalIpos(params: GetIposParams = {}): Promise<Get
     limit,
     availableStatuses,
     metricsSummary: {
-      activeCount: stats.completedCount,
-      upcomingCount: stats.allotmentCount,
+      activeCount: analyticsData.kpis.totalIposApplied,
+      upcomingCount: 0,
       closedCount: total,
-      totalApplications: stats.totalProfit,
-      totalAppliedCount: totalApplicationsCount,
-      totalAllottedCount: allottedApplicationsCount,
-      totalIposApplied: totalIposAppliedCount || total,
-      allotmentRatePercentage,
+      totalApplications: analyticsData.kpis.totalProfit,
+      totalAppliedCount: analyticsData.kpis.totalApplications,
+      totalAllottedCount: analyticsData.kpis.totalAllotted,
+      totalIposApplied: analyticsData.kpis.totalIposApplied,
+      allotmentRatePercentage: analyticsData.kpis.allotmentRate,
     },
+    analyticsData,
+    rawHistoricalIpos,
+    rawHistoricalApps,
   };
 }
 

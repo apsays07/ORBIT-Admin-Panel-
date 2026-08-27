@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { NexoIPORecord } from "@/types/ipo";
 import { deleteIpo } from "@/lib/ipo/actions";
+import { IpoHistoryAnalyticsData } from "@/lib/calculations";
 import {
   Search,
   History,
@@ -32,6 +33,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card } from "@/components/ui/card";
 import { IpoModal } from "./ipo-modal";
+import { IpoHistoryAnalytics } from "./ipo-history-analytics";
 import { cn } from "@/lib/utils";
 
 interface IpoHistoryViewProps {
@@ -50,6 +52,9 @@ interface IpoHistoryViewProps {
     totalIposApplied?: number;
     allotmentRatePercentage?: number;
   };
+  initialAnalyticsData?: IpoHistoryAnalyticsData;
+  rawHistoricalIpos?: any[];
+  rawHistoricalApps?: any[];
 }
 
 export function IpoHistoryView({
@@ -59,6 +64,9 @@ export function IpoHistoryView({
   totalPages,
   availableStatuses,
   metricsSummary,
+  initialAnalyticsData,
+  rawHistoricalIpos = [],
+  rawHistoricalApps = [],
 }: IpoHistoryViewProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -75,14 +83,6 @@ export function IpoHistoryView({
   const [editingIpo, setEditingIpo] = useState<NexoIPORecord | null>(null);
   const [actionInProgressId, setActionInProgressId] = useState<string | null>(null);
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
-
-  const totalProfitDisbursed = metricsSummary?.totalApplications || 0;
-  const totalAppliedCount = metricsSummary?.totalAppliedCount || total;
-  const totalAllottedCount = metricsSummary?.totalAllottedCount || 0;
-  const totalIposApplied = metricsSummary?.totalIposApplied ?? total;
-  const allotmentRatePercentage = typeof metricsSummary?.allotmentRatePercentage === "number"
-    ? metricsSummary.allotmentRatePercentage
-    : (totalAppliedCount > 0 ? Number(((totalAllottedCount / totalAppliedCount) * 100).toFixed(1)) : 0);
 
   function applyFilters(
     newQuery: string,
@@ -174,14 +174,14 @@ export function IpoHistoryView({
         <div>
           <div className="flex items-center gap-2.5">
             <h1 className="text-2xl sm:text-[28px] font-semibold tracking-tight text-zinc-100">
-              IPO Catalog & Archive
+              IPO History & Analytics
             </h1>
             <span className="px-2.5 py-0.5 text-[10px] font-semibold rounded-md bg-zinc-900 text-zinc-400 border border-zinc-800 tracking-wide font-mono">
-              DIRECTORY
+              HISTORICAL ARCHIVE
             </span>
           </div>
           <p className="text-[13.5px] text-zinc-400 font-normal mt-1 leading-relaxed">
-            All syndicate offerings, finalized allotments, and profit distributions.
+            Syndicate performance telemetry, application trends, and finalized profit distributions.
           </p>
         </div>
 
@@ -212,71 +212,22 @@ export function IpoHistoryView({
         </div>
       </div>
 
-      {/* 3 Summary KPI Metric Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 font-sans">
-        {/* Card 1: Total IPOs Applied */}
-        <div className="group relative overflow-hidden rounded-2xl bg-zinc-900/50 border border-zinc-800/80 hover:border-zinc-700/90 p-5 shadow-xs backdrop-blur-md transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md">
-          <div className="flex items-center justify-between gap-2">
-            <span className="text-[12.5px] font-medium text-zinc-400 font-sans">
-              Total IPOs Applied
-            </span>
-            <div className="h-8.5 w-8.5 rounded-xl bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 flex items-center justify-center shrink-0">
-              <History className="h-4 w-4" />
-            </div>
-          </div>
-          <div className="mt-3 flex items-baseline gap-1.5">
-            <span className="text-[28px] font-bold text-zinc-50 tracking-tight leading-none font-sans">
-              {totalIposApplied}
-            </span>
-            <span className="text-xs text-zinc-400 font-normal font-sans">
-              {totalIposApplied === 1 ? "IPO" : "IPOs"}
-            </span>
-          </div>
-          <p className="text-xs text-zinc-400 mt-2 font-sans font-normal leading-relaxed">
-            Total syndicate IPO offerings participated
-          </p>
-        </div>
+      {/* Premium Real-Data Analytics Visualization Engine */}
+      <IpoHistoryAnalytics
+        initialAnalytics={initialAnalyticsData}
+        rawHistoricalIpos={rawHistoricalIpos}
+        rawHistoricalApps={rawHistoricalApps}
+        onOpenAddIpo={handleOpenAdd}
+      />
 
-        {/* Card 2: Total Profit Gained */}
-        <div className="group relative overflow-hidden rounded-2xl bg-zinc-900/50 border border-emerald-900/30 hover:border-emerald-700/50 p-5 shadow-xs backdrop-blur-md transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md">
-          <div className="flex items-center justify-between gap-2">
-            <span className="text-[12.5px] font-medium text-emerald-400 font-sans">
-              Total Profit Gained
-            </span>
-            <div className="h-8.5 w-8.5 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 flex items-center justify-center shrink-0">
-              <Coins className="h-4 w-4" />
-            </div>
-          </div>
-          <div className="mt-3 flex items-baseline gap-1.5">
-            <span className="text-[28px] font-bold text-emerald-400 tracking-tight leading-none font-sans">
-              ₹{totalProfitDisbursed.toLocaleString("en-IN")}
-            </span>
-          </div>
-          <p className="text-xs text-zinc-400 mt-2 font-sans font-normal leading-relaxed">
-            Total realized returns gained
-          </p>
-        </div>
-
-        {/* Card 3: Allotment Rate */}
-        <div className="group relative overflow-hidden rounded-2xl bg-zinc-900/50 border border-purple-900/30 hover:border-purple-700/50 p-5 shadow-xs backdrop-blur-md transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md">
-          <div className="flex items-center justify-between gap-2">
-            <span className="text-[12.5px] font-medium text-purple-400 font-sans">
-              Allotment Rate
-            </span>
-            <div className="h-8.5 w-8.5 rounded-xl bg-purple-500/10 border border-purple-500/20 text-purple-400 flex items-center justify-center shrink-0">
-              <TrendingUp className="h-4 w-4" />
-            </div>
-          </div>
-          <div className="mt-3 flex items-center gap-2">
-            <span className="text-[28px] font-bold text-zinc-50 tracking-tight leading-none font-sans">
-              {allotmentRatePercentage}%
-            </span>
-            <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 font-sans">
-              {totalAllottedCount} Allotted
-            </span>
-          </div>
-          <p className="text-xs text-zinc-400 mt-2 font-sans font-normal leading-relaxed">
-            {totalAllottedCount} allotted of {totalAppliedCount} applied ({allotmentRatePercentage}%)
+      {/* Section Divider & Catalog Title */}
+      <div className="pt-4 border-t border-zinc-900 flex items-center justify-between">
+        <div>
+          <h3 className="text-base font-semibold text-zinc-100 tracking-tight">
+            Historical Offering Archive
+          </h3>
+          <p className="text-xs text-zinc-400">
+            Searchable log of all syndicate offerings and archived records
           </p>
         </div>
       </div>
@@ -352,148 +303,127 @@ export function IpoHistoryView({
         </div>
       </div>
 
-      {/* Main Historical Table */}
-      <div className={cn("bg-zinc-900/50 border border-zinc-800/80 rounded-2xl overflow-hidden shadow-xs transition-opacity duration-150 relative backdrop-blur-xs", isPending && "opacity-60 pointer-events-none")}>
-        {isPending && (
-          <div className="absolute top-0 left-0 right-0 h-[2px] bg-gradient-to-r from-emerald-500 via-teal-400 to-cyan-500 animate-pulse z-10" />
-        )}
-        {initialIpos.length === 0 ? (
-          /* Empty State */
-          <div className="py-16 text-center space-y-4">
-            <div className="h-12 w-12 rounded-2xl bg-zinc-800/80 text-zinc-400 flex items-center justify-center mx-auto border border-zinc-700">
-              <History className="h-6 w-6" />
-            </div>
-            <div className="space-y-1">
-              <h4 className="text-sm font-semibold text-zinc-200">No IPO history available</h4>
-              <p className="text-xs text-zinc-500 max-w-sm mx-auto">
-                {searchQuery || selectedStatus !== "ALL" || selectedCategory !== "ALL"
-                  ? "No historical records match your search or filter parameters."
-                  : "There are currently no concluded or historical IPO records in the database."}
-              </p>
-            </div>
-          </div>
-        ) : (
+      {/* IPO List / Table */}
+      {initialIpos.length === 0 ? (
+        <Card className="p-12 text-center bg-zinc-900/30 border-zinc-800/80 rounded-2xl">
+          <History className="h-10 w-10 text-zinc-600 mx-auto mb-3" />
+          <h3 className="text-base font-semibold text-zinc-200">No historical IPOs found</h3>
+          <p className="text-xs text-zinc-500 mt-1 max-w-sm mx-auto">
+            {searchQuery || selectedStatus !== "ALL" || selectedCategory !== "ALL"
+              ? "Try adjusting your filters or search query to find offerings."
+              : "Completed and archived IPOs will appear here after syndicate execution."}
+          </p>
+        </Card>
+      ) : (
+        <div className="rounded-2xl border border-zinc-800/80 bg-zinc-900/40 overflow-hidden shadow-xs">
           <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs text-zinc-300">
-              <thead className="bg-zinc-950/90 text-[10.5px] font-semibold text-zinc-400 uppercase tracking-wider border-b border-zinc-800 font-sans">
-                <tr>
-                  <th className="py-3.5 px-4">IPO Name</th>
-                  <th className="py-3.5 px-3">Issue Size / Lot</th>
-                  <th className="py-3.5 px-3">Min Investment</th>
-                  <th className="py-3.5 px-3">Closing Date</th>
-                  <th className="py-3.5 px-3">Profit (₹)</th>
-                  <th className="py-3.5 px-4 text-right">Actions</th>
+            <table className="w-full text-left text-xs border-collapse font-sans">
+              <thead>
+                <tr className="border-b border-zinc-800 bg-zinc-950/70 text-zinc-400 font-medium">
+                  <th className="py-3 px-4">IPO Name</th>
+                  <th className="py-3 px-3">Closing Date</th>
+                  <th className="py-3 px-3 text-right">Min Invest</th>
+                  <th className="py-3 px-3 text-right">Profit Dist.</th>
+                  <th className="py-3 px-4 text-right">Actions</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-zinc-800/60 font-sans">
+              <tbody className="divide-y divide-zinc-800/60 text-zinc-300 font-normal">
                 {initialIpos.map((ipo) => {
-                  const totalProfit = ipo.profitDistribution?.totalProfit || 0;
+                  const profitDist = ipo.profitDistribution;
+                  const totalProfit = profitDist?.totalProfit || 0;
+                  const hasProfit = totalProfit > 0;
+                  const isDeleting = actionInProgressId === ipo.id;
+                  const isConfirmingDelete = deleteConfirmId === ipo.id;
 
                   return (
                     <tr
                       key={ipo.id}
-                      className="hover:bg-zinc-800/40 transition-colors group"
+                      className="hover:bg-zinc-800/30 transition-colors group"
                     >
-                      {/* IPO Name */}
-                      <td className="py-3.5 px-4">
-                        <div className="font-semibold text-zinc-100 text-[13.5px] group-hover:text-emerald-300 transition-colors">
-                          {ipo.name}
-                        </div>
+                      <td className="py-3 px-4 font-medium text-zinc-100">
+                        {ipo.name}
                       </td>
 
-                      {/* Issue Size / Lot */}
-                      <td className="py-3.5 px-3">
-                        <div className="space-y-0.5">
-                          <div className="text-zinc-200 font-semibold text-[13px] font-sans t-num">
-                            {ipo.metrics?.issueSize || "—"}
-                          </div>
-                          <div className="text-[10.5px] text-zinc-500 font-sans">
-                            Lot: <strong className="text-zinc-400 font-sans t-num">{ipo.metrics?.lotSize || 1}</strong>
-                          </div>
-                        </div>
+                      <td className="py-3 px-3 text-zinc-400 font-mono text-[11.5px]">
+                        {ipo.metrics?.closeDate
+                          ? new Date(ipo.metrics.closeDate).toLocaleDateString("en-IN", {
+                              day: "numeric",
+                              month: "short",
+                              year: "numeric",
+                            })
+                          : "—"}
                       </td>
 
-                      {/* Min Investment */}
-                      <td className="py-3.5 px-3">
-                        <div className="text-zinc-200 font-semibold text-[13px] font-sans t-num">
-                          ₹{(ipo.metrics?.minInvestment || 0).toLocaleString("en-IN")}
-                        </div>
+                      <td className="py-3 px-3 text-right font-mono text-zinc-300">
+                        {ipo.metrics?.minInvestment
+                          ? `₹${ipo.metrics.minInvestment.toLocaleString("en-IN")}`
+                          : "—"}
                       </td>
 
-                      {/* Closing Date */}
-                      <td className="py-3.5 px-3 font-sans text-xs">
-                        <div className="flex items-center gap-1.5 text-zinc-300 text-[12.5px]">
-                          <Calendar className="h-3.5 w-3.5 text-zinc-500 shrink-0" />
-                          <span className="font-medium text-zinc-200 font-sans t-num">{ipo.metrics?.closeDate || "—"}</span>
-                        </div>
-                      </td>
-
-                      {/* Profit Amount */}
-                      <td className="py-3.5 px-3 font-mono">
-                        {totalProfit > 0 ? (
-                          <div className="font-bold text-[14px] text-emerald-400 t-num">
+                      <td className="py-3 px-3 text-right">
+                        {hasProfit ? (
+                          <div className="font-mono text-emerald-400 font-medium">
                             ₹{totalProfit.toLocaleString("en-IN")}
                           </div>
                         ) : (
-                          <div className="text-zinc-500 text-xs font-mono">—</div>
+                          <span className="text-zinc-500 font-mono">—</span>
                         )}
                       </td>
 
-                      {/* Actions */}
-                      <td className="py-3.5 px-4 text-right">
+                      <td className="py-3 px-4 text-right">
                         <div className="flex items-center justify-end gap-1.5">
-                          <Link href={`/ad/ipo/history/${ipo.id}`} prefetch={true}>
+                          <Link href={`/ad/ipo/history/${ipo.id}`}>
                             <Button
-                              variant="ghost"
+                              variant="outline"
                               size="sm"
-                              className="h-8 px-2.5 text-xs text-zinc-300 hover:text-white bg-zinc-900/60 hover:bg-zinc-800 rounded-xl border border-zinc-800/80 hover:border-zinc-700/80 transition-all gap-1.5 cursor-pointer shadow-2xs"
+                              className="h-7 px-2 text-[11px] border-zinc-800 hover:bg-zinc-800 text-zinc-300 rounded-lg gap-1 cursor-pointer"
                             >
-                              <Eye className="h-3.5 w-3.5 text-zinc-400 group-hover:text-zinc-200" />
+                              <Eye className="h-3 w-3" />
                               <span>Details</span>
                             </Button>
                           </Link>
 
                           <Button
-                            onClick={() => handleOpenEdit(ipo)}
-                            variant="outline"
+                            variant="ghost"
                             size="sm"
-                            className="h-8 px-2.5 text-xs text-zinc-300 hover:text-white bg-zinc-900/80 hover:bg-zinc-800 border-zinc-800 rounded-xl gap-1.5 cursor-pointer shadow-2xs"
+                            onClick={() => handleOpenEdit(ipo)}
+                            className="h-7 w-7 p-0 text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800 rounded-lg cursor-pointer"
+                            title="Edit IPO"
                           >
-                            <Edit2 className="h-3.5 w-3.5 text-zinc-400" />
-                            <span>Edit</span>
+                            <Edit2 className="h-3.5 w-3.5" />
                           </Button>
 
-                          {deleteConfirmId === ipo.id ? (
+                          {isConfirmingDelete ? (
                             <div className="flex items-center gap-1">
                               <Button
-                                onClick={() => handleDeleteIpo(ipo.id)}
-                                disabled={actionInProgressId === ipo.id}
                                 size="sm"
-                                className="h-8 px-2.5 text-xs bg-rose-600 hover:bg-rose-500 text-white font-semibold rounded-xl cursor-pointer"
+                                variant="danger"
+                                disabled={isDeleting}
+                                onClick={() => handleDeleteIpo(ipo.id)}
+                                className="h-7 px-2 text-[11px] rounded-lg bg-red-600 hover:bg-red-500 gap-1"
                               >
-                                {actionInProgressId === ipo.id ? (
+                                {isDeleting ? (
                                   <Loader2 className="h-3 w-3 animate-spin" />
                                 ) : (
-                                  "Confirm"
+                                  <span>Confirm</span>
                                 )}
                               </Button>
                               <Button
-                                onClick={() => setDeleteConfirmId(null)}
-                                disabled={actionInProgressId === ipo.id}
-                                variant="ghost"
                                 size="sm"
-                                className="h-8 px-2 text-xs text-zinc-400 hover:text-zinc-200"
+                                variant="ghost"
+                                onClick={() => setDeleteConfirmId(null)}
+                                className="h-7 px-1.5 text-[11px] rounded-lg text-zinc-400 hover:text-zinc-200"
                               >
                                 Cancel
                               </Button>
                             </div>
                           ) : (
                             <Button
-                              onClick={() => setDeleteConfirmId(ipo.id)}
                               variant="ghost"
                               size="sm"
-                              className="h-8 w-8 p-0 text-zinc-400 hover:text-rose-400 hover:bg-rose-500/10 rounded-xl cursor-pointer"
-                              title="Delete IPO"
+                              onClick={() => setDeleteConfirmId(ipo.id)}
+                              className="h-7 w-7 p-0 text-zinc-400 hover:text-red-400 hover:bg-red-500/10 rounded-lg cursor-pointer"
+                              title="Delete Record"
                             >
                               <Trash2 className="h-3.5 w-3.5" />
                             </Button>
@@ -506,42 +436,40 @@ export function IpoHistoryView({
               </tbody>
             </table>
           </div>
-        )}
 
-        {/* Pagination Controls */}
-        <div className="px-4 py-3.5 border-t border-zinc-800/80 bg-zinc-950/80 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-zinc-400 font-sans">
-          <div>
-            Showing <strong className="text-zinc-200">{initialIpos.length}</strong> of{" "}
-            <strong className="text-zinc-200">{total}</strong> records
-          </div>
-
-          <div className="flex items-center gap-2">
-            <span className="text-zinc-400 font-mono text-[11px]">
-              Page {currentPage} of {totalPages}
-            </span>
-            <div className="flex items-center gap-1">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => handlePageChange(currentPage - 1)}
-                disabled={currentPage <= 1 || isPending}
-                className="h-8 w-8 p-0 border-zinc-800 hover:bg-zinc-800 text-zinc-300 rounded-xl cursor-pointer disabled:opacity-40"
-              >
-                <ChevronLeft className="h-4 w-4" />
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => handlePageChange(currentPage + 1)}
-                disabled={currentPage >= totalPages || isPending}
-                className="h-8 w-8 p-0 border-zinc-800 hover:bg-zinc-800 text-zinc-300 rounded-xl cursor-pointer disabled:opacity-40"
-              >
-                <ChevronRight className="h-4 w-4" />
-              </Button>
+          {/* Pagination */}
+          {totalPages > 1 && (
+            <div className="flex items-center justify-between p-3.5 border-t border-zinc-800 bg-zinc-950/60">
+              <div className="text-xs text-zinc-400">
+                Page <strong className="text-zinc-200 font-semibold">{currentPage}</strong> of{" "}
+                <strong className="text-zinc-200 font-semibold">{totalPages}</strong> ({total} total)
+              </div>
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={currentPage <= 1 || isPending}
+                  onClick={() => handlePageChange(currentPage - 1)}
+                  className="h-8 px-2.5 text-xs border-zinc-800 hover:bg-zinc-800 text-zinc-300 rounded-xl gap-1 cursor-pointer disabled:opacity-40"
+                >
+                  <ChevronLeft className="h-3.5 w-3.5" />
+                  <span>Previous</span>
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={currentPage >= totalPages || isPending}
+                  onClick={() => handlePageChange(currentPage + 1)}
+                  className="h-8 px-2.5 text-xs border-zinc-800 hover:bg-zinc-800 text-zinc-300 rounded-xl gap-1 cursor-pointer disabled:opacity-40"
+                >
+                  <span>Next</span>
+                  <ChevronRight className="h-3.5 w-3.5" />
+                </Button>
+              </div>
             </div>
-          </div>
+          )}
         </div>
-      </div>
+      )}
 
       {/* Add / Edit IPO Modal */}
       <IpoModal

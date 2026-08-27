@@ -20,6 +20,8 @@ import {
   calculateAllottedLotsCount,
   calculateMemberDeployedCapital,
   calculateMemberAppliedLots,
+  aggregateHistoricalIpos,
+  filterItemsByTimeRange,
   calculateRankings,
   formatCurrency,
   formatPercentage,
@@ -132,6 +134,74 @@ test("Metrics: Member Deployed Capital", () => {
   assert.equal(calculateMemberDeployedCapital(sampleApps, "mem_2"), 35000);
   // Unknown member
   assert.equal(calculateMemberDeployedCapital(sampleApps, "mem_999"), 0);
+});
+
+test("Historical IPO Analytics: aggregateHistoricalIpos & Time Ranges", () => {
+  const now = new Date("2026-08-27T12:00:00Z").getTime();
+  const dayMs = 24 * 60 * 60 * 1000;
+
+  const mockIpos = [
+    {
+      id: "ipo_1",
+      name: "Acme Tech IPO",
+      metrics: { closeDate: new Date(now - 2 * dayMs).toISOString() }, // 2 days ago
+      profitDistribution: { totalProfit: 45000 },
+    },
+    {
+      id: "ipo_2",
+      name: "Zenith Retail IPO",
+      metrics: { closeDate: new Date(now - 20 * dayMs).toISOString() }, // 20 days ago
+      profitDistribution: { totalProfit: -5000 },
+    },
+    {
+      id: "ipo_3",
+      name: "Global Infra IPO",
+      metrics: { closeDate: new Date(now - 60 * dayMs).toISOString() }, // 60 days ago
+      profitDistribution: { totalProfit: 80000 },
+    },
+  ];
+
+  const mockApps = [
+    // Acme Tech: 4 PANs applied, 2 allotted, ₹60,000 capital
+    { id: "app_1", ipoId: "ipo_1", numberOfPanCards: 4, status: "ALLOTTED", allottedIndices: [0, 1], totalContribution: 60000 },
+    // Zenith Retail: 2 PANs applied, 0 allotted, ₹30,000 capital
+    { id: "app_2", ipoId: "ipo_2", numberOfPanCards: 2, status: "NOT_ALLOTTED", totalContribution: 30000 },
+    // Global Infra: 10 PANs applied, 4 allotted, ₹150,000 capital
+    { id: "app_3", ipoId: "ipo_3", numberOfPanCards: 10, status: "ALLOTTED", allottedIndices: [0, 1, 2, 3], totalContribution: 150000 },
+  ];
+
+  // 1. ALL Time Range
+  const allRes = aggregateHistoricalIpos(mockIpos, mockApps, "ALL", "DAILY", now);
+  assert.equal(allRes.kpis.totalIposApplied, 3);
+  assert.equal(allRes.kpis.totalApplications, 16); // 4 + 2 + 10
+  assert.equal(allRes.kpis.totalAllotted, 6); // 2 + 0 + 4
+  assert.equal(allRes.kpis.totalNotAllotted, 10); // 16 - 6
+  assert.equal(allRes.kpis.allotmentRate, 37.5); // (6/16) * 100
+  assert.equal(allRes.kpis.totalCapitalInvested, 240000); // 60000 + 30000 + 150000
+  assert.equal(allRes.kpis.totalProfit, 120000); // 45000 - 5000 + 80000
+  assert.equal(allRes.kpis.overallReturn, 50); // (120000 / 240000) * 100
+  assert.equal(allRes.timeline.length, 3);
+
+  // 2. 7D Time Range (only Acme Tech)
+  const sevenDayRes = aggregateHistoricalIpos(mockIpos, mockApps, "7D", "DAILY", now);
+  assert.equal(sevenDayRes.kpis.totalIposApplied, 1);
+  assert.equal(sevenDayRes.kpis.totalApplications, 4);
+  assert.equal(sevenDayRes.kpis.totalAllotted, 2);
+  assert.equal(sevenDayRes.kpis.allotmentRate, 50);
+  assert.equal(sevenDayRes.kpis.totalProfit, 45000);
+
+  // 3. 30D Time Range (Acme Tech & Zenith Retail)
+  const thirtyDayRes = aggregateHistoricalIpos(mockIpos, mockApps, "30D", "DAILY", now);
+  assert.equal(thirtyDayRes.kpis.totalIposApplied, 2);
+  assert.equal(thirtyDayRes.kpis.totalApplications, 6); // 4 + 2
+  assert.equal(thirtyDayRes.kpis.totalAllotted, 2); // 2 + 0
+  assert.equal(thirtyDayRes.kpis.totalProfit, 40000); // 45000 - 5000
+
+  // 4. Empty IPO records test
+  const emptyRes = aggregateHistoricalIpos([], [], "ALL", "DAILY", now);
+  assert.equal(emptyRes.kpis.totalIposApplied, 0);
+  assert.equal(emptyRes.kpis.totalApplications, 0);
+  assert.equal(emptyRes.timeline.length, 0);
 });
 
 test("Rankings: Deterministic Order & Tie-Breaking", () => {
