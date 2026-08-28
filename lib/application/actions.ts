@@ -2,6 +2,7 @@
 
 import { cookies } from "next/headers";
 import { revalidatePath } from "next/cache";
+import { cache } from "react";
 import { getDatabase } from "@/lib/db/mongodb";
 import {
   ApplicationRecord,
@@ -129,14 +130,14 @@ export async function getApplicationDetail(
 /**
  * Fetch member options for select dropdowns
  */
-export async function getMembersForSelection(): Promise<MemberOption[]> {
+export const getMembersForSelection = cache(async function getMembersForSelection(): Promise<MemberOption[]> {
   return ApplicationService.getMembersForSelection();
-}
+});
 
 /**
  * Fetch IPO options for select dropdowns
  */
-export async function getIposForSelection(): Promise<IpoSelectOption[]> {
+export const getIposForSelection = cache(async function getIposForSelection(): Promise<IpoSelectOption[]> {
   const db = await getDatabase();
   if (!db) return [];
 
@@ -162,7 +163,7 @@ export async function getIposForSelection(): Promise<IpoSelectOption[]> {
     minInvestment: d.metrics?.minInvestment || 15000,
     lotSize: d.metrics?.lotSize || 1,
   }));
-}
+});
 
 export interface SoloApplicationInputRow {
   memberId: string;

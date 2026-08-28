@@ -88,11 +88,16 @@ function formatRelativeTime(dateStr: string): string {
   }
 }
 
+let _cachedNotifications: NotificationRecord[] | null = null;
+let _cachedUnreadCount = 0;
+let _lastNotificationFetch = 0;
+const NOTIFICATION_CACHE_TTL_MS = 60000;
+
 export function NotificationsPopover() {
   const toast = useToast();
   const [isOpen, setIsOpen] = useState(false);
-  const [notifications, setNotifications] = useState<NotificationRecord[]>([]);
-  const [unreadCount, setUnreadCount] = useState(0);
+  const [notifications, setNotifications] = useState<NotificationRecord[]>(_cachedNotifications || []);
+  const [unreadCount, setUnreadCount] = useState(_cachedUnreadCount);
   const [isLoading, setIsLoading] = useState(false);
 
   // Dialog State for creating / editing
@@ -102,23 +107,41 @@ export function NotificationsPopover() {
   const containerRef = useRef<HTMLDivElement>(null);
 
   // Fetch notifications on mount & when opened
-  async function loadData() {
+  async function loadData(force = false) {
+    const now = Date.now();
+    if (!force && _cachedNotifications && now - _lastNotificationFetch < NOTIFICATION_CACHE_TTL_MS) {
+      setNotifications(_cachedNotifications);
+      setUnreadCount(_cachedUnreadCount);
+      return;
+    }
+
     setIsLoading(true);
-    const res = await getNotifications();
-    setIsLoading(false);
-    if (res.success) {
-      setNotifications(res.notifications);
-      setUnreadCount(res.unreadCount);
+    try {
+      const res = await getNotifications();
+      if (res.success) {
+        _cachedNotifications = res.notifications;
+        _cachedUnreadCount = res.unreadCount;
+        _lastNotificationFetch = Date.now();
+        setNotifications(res.notifications);
+        setUnreadCount(res.unreadCount);
+      }
+    } finally {
+      setIsLoading(false);
     }
   }
 
   useEffect(() => {
-    loadData();
+    if (_cachedNotifications) {
+      setNotifications(_cachedNotifications);
+      setUnreadCount(_cachedUnreadCount);
+    } else {
+      loadData(false);
+    }
   }, []);
 
   useEffect(() => {
     if (isOpen) {
-      loadData();
+      loadData(true);
     }
   }, [isOpen]);
 
@@ -141,8 +164,17 @@ export function NotificationsPopover() {
     e.stopPropagation();
     const res = await deleteNotification(id);
     if (res.success) {
-      setNotifications((prev) => prev.filter((n) => n.id !== id));
-      setUnreadCount((prev) => Math.max(0, prev - 1));
+      setNotifications((prev) => {
+        const next = prev.filter((n) => n.id !== id);
+        _cachedNotifications = next;
+        return next;
+      });
+      setUnreadCount((prev) => {
+        const next = Math.max(0, prev - 1);
+        _cachedUnreadCount = next;
+        return next;
+      });
+      _lastNotificationFetch = 0;
       toast.success("Notification Deleted", "Notification removed from database.");
     }
   }
@@ -163,8 +195,13 @@ export function NotificationsPopover() {
   async function handleMarkAllAsRead() {
     const res = await markAllNotificationsAsRead();
     if (res.success) {
-      setNotifications((prev) => prev.map((n) => ({ ...n, isRead: true })));
+      setNotifications((prev) => {
+        const next = prev.map((n) => ({ ...n, isRead: true }));
+        _cachedNotifications = next;
+        return next;
+      });
       setUnreadCount(0);
+      _cachedUnreadCount = 0;
       toast.success("All Caught Up", "All notifications marked as read.");
     }
   }
@@ -175,6 +212,9 @@ export function NotificationsPopover() {
     if (res.success) {
       setNotifications([]);
       setUnreadCount(0);
+      _cachedNotifications = [];
+      _cachedUnreadCount = 0;
+      _lastNotificationFetch = Date.now();
       toast.success("Cleared", "All notifications have been removed.");
     }
   }
@@ -182,10 +222,16 @@ export function NotificationsPopover() {
   async function handleItemClick(item: NotificationRecord) {
     if (!item.isRead) {
       markNotificationAsRead(item.id);
-      setNotifications((prev) =>
-        prev.map((n) => (n.id === item.id ? { ...n, isRead: true } : n))
-      );
-      setUnreadCount((prev) => Math.max(0, prev - 1));
+      setNotifications((prev) => {
+        const next = prev.map((n) => (n.id === item.id ? { ...n, isRead: true } : n));
+        _cachedNotifications = next;
+        return next;
+      });
+      setUnreadCount((prev) => {
+        const next = Math.max(0, prev - 1);
+        _cachedUnreadCount = next;
+        return next;
+      });
     }
   }
 

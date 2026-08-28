@@ -1,4 +1,5 @@
 import { cookies, headers } from "next/headers";
+import { cache } from "react";
 import crypto from "node:crypto";
 import { getDatabase } from "@/lib/db/mongodb";
 import { SessionRecord } from "@/types/security";
@@ -39,101 +40,74 @@ export interface SessionValidationResult {
 /**
  * Parse client device details from headers
  */
-function parseDeviceDetails(userAgentRaw?: string | null): {
-  browser: string;
-  os: string;
-  deviceType: string;
-  deviceName: string;
+export function getClientDeviceInfo(headerList: Headers): {
+  ipAddress?: string;
+  userAgent?: string;
 } {
-  const ua = userAgentRaw || "";
-  let browser = "Browser";
-  if (/chrome|crios/i.test(ua) && !/edge|edg/i.test(ua)) browser = "Chrome";
-  else if (/safari/i.test(ua) && !/chrome/i.test(ua)) browser = "Safari";
-  else if (/firefox|fxios/i.test(ua)) browser = "Firefox";
-  else if (/edge|edg/i.test(ua)) browser = "Edge";
-  else if (/opera|opr/i.test(ua)) browser = "Opera";
-
-  let os = "OS";
-  if (/windows/i.test(ua)) os = "Windows";
-  else if (/macintosh|mac os x/i.test(ua)) os = "macOS";
-  else if (/linux/i.test(ua)) os = "Linux";
-  else if (/android/i.test(ua)) os = "Android";
-  else if (/iphone|ipad|ipod/i.test(ua)) os = "iOS";
-
-  let deviceType = "Desktop";
-  if (/mobile|android|iphone|ipod/i.test(ua)) deviceType = "Mobile";
-  else if (/ipad|tablet/i.test(ua)) deviceType = "Tablet";
-
-  const deviceName = `${browser} on ${os}`;
-  return { browser, os, deviceType, deviceName };
+  const forwardedFor = headerList.get("x-forwarded-for");
+  const ipAddress = forwardedFor ? forwardedFor.split(",")[0].trim() : headerList.get("x-real-ip") || undefined;
+  const userAgent = headerList.get("user-agent") || undefined;
+  return { ipAddress, userAgent };
 }
 
 /**
  * Generate a unique, cryptographically random session token ID
  */
 export function generateSessionId(): string {
-  const random = crypto.randomBytes(24).toString("hex");
-  return `sess_${Date.now()}_${random}`;
+  return "ses_" + crypto.randomBytes(24).toString("hex");
 }
 
 /**
  * Create and persist a new authenticated session in MongoDB and set the secure cookie.
  */
-export async function createSession({
-  userId,
-  role = "SUPER_ADMIN",
-  rememberMe = true,
-}: {
-  userId: string;
+export async function createSession(params: {
+  userId?: string;
+  user?: string;
   role?: "SUPER_ADMIN" | "ADMIN" | "MEMBER";
   rememberMe?: boolean;
 }): Promise<SessionPayload> {
+  const user = params.user || params.userId || "admin";
+  const role = params.role || "SUPER_ADMIN";
+  const rememberMe = params.rememberMe ?? false;
   const sessionId = generateSessionId();
   const now = Date.now();
   const maxAgeSeconds = rememberMe
     ? SESSION_CONFIG.PERSISTENT_MAX_AGE_SECONDS
     : SESSION_CONFIG.TRANSIENT_MAX_AGE_SECONDS;
-
-  const expiresAtMs = now + maxAgeSeconds * 1000;
-  const createdAtIso = new Date(now).toISOString();
-  const expiresAtIso = new Date(expiresAtMs).toISOString();
+  const expiresAt = now + maxAgeSeconds * 1000;
 
   const payload: SessionPayload = {
     sessionId,
-    user: userId,
+    user,
     role,
     rememberMe,
     createdAt: now,
-    expiresAt: expiresAtMs,
+    expiresAt,
   };
 
   // 1. Persist session record into MongoDB `sessions` collection
   try {
-    const headersList = await headers();
-    const userAgent = headersList.get("user-agent") || "Unknown";
-    const ipAddress = headersList.get("x-forwarded-for")?.split(",")[0]?.trim() || "127.0.0.1";
-    const deviceInfo = parseDeviceDetails(userAgent);
-
     const db = await getDatabase();
     if (db) {
-      const sessionDoc: SessionRecord = {
+      const headerList = await headers();
+      const { ipAddress, userAgent } = getClientDeviceInfo(headerList);
+
+      const sessionDoc = {
         id: sessionId,
-        userId,
-        createdAt: createdAtIso,
-        updatedAt: createdAtIso,
-        expiresAt: expiresAtIso,
-        lastActiveAt: createdAtIso,
-        revokedAt: null,
-        userAgent,
+        userId: user,
+        role,
+        rememberMe,
+        createdAt: new Date(now).toISOString(),
+        expiresAt: new Date(expiresAt).toISOString(),
+        lastActiveAt: new Date(now).toISOString(),
         ipAddress,
-        browser: deviceInfo.browser,
-        os: deviceInfo.os,
-        deviceType: deviceInfo.deviceType,
-        deviceName: deviceInfo.deviceName,
+        userAgent,
         isActive: true,
+        updatedAt: new Date(now).toISOString(),
+        revokedAt: null,
       };
 
-      await db.collection<any>("sessions").insertOne(sessionDoc);
+      await db.collection("sessions").insertOne(sessionDoc);
     }
   } catch (err) {
     console.error("[createSession] Error persisting session document:", err);
@@ -155,8 +129,9 @@ export async function createSession({
 
 /**
  * Validate the current session from the request cookie and verify against MongoDB.
+ * Memoized per-request with React cache to eliminate duplicate DB lookups.
  */
-export async function validateSession(): Promise<SessionValidationResult> {
+export const validateSession = cache(async function validateSession(): Promise<SessionValidationResult> {
   try {
     const cookieStore = await cookies();
     const sessionCookie = cookieStore.get(SESSION_CONFIG.COOKIE_NAME);
@@ -257,7 +232,7 @@ export async function validateSession(): Promise<SessionValidationResult> {
     console.error("[validateSession] Unexpected error:", error);
     return { authenticated: false, reason: "ERROR" };
   }
-}
+});
 
 /**
  * Destroy the current session (Logout):
@@ -293,14 +268,10 @@ export async function destroySession(): Promise<void> {
   }
 }
 
-/**
- * Server-side guard for protected server actions and routes.
- * Throws Unauthorized error if session is invalid.
- */
-export async function verifyAdminSession(): Promise<string> {
+export const verifyAdminSession = cache(async function verifyAdminSession(): Promise<string> {
   const result = await validateSession();
   if (!result.authenticated || !result.user) {
     throw new Error("Unauthorized: Admin session required.");
   }
   return result.user;
-}
+});

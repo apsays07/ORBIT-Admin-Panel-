@@ -14,6 +14,7 @@ import {
   MessageSquare,
   Activity,
   Shield,
+  ShieldAlert,
   Plus,
   LogOut,
   Database,
@@ -41,6 +42,7 @@ export interface NavItem {
 
 export const navItems: NavItem[] = [
   { name: "IPO Management", href: "/ad/ipo", icon: TrendingUp, active: true },
+  { name: "IPO Control Center", href: "/ad/control-center", icon: ShieldAlert, active: true },
   { name: "IPO History", href: "/ad/ipo/history", icon: History, active: true },
   { name: "Applications", href: "/ad/applications", icon: FileSpreadsheet, active: true },
   { name: "Allotment", href: "/ad/allotment", icon: PieChart, active: true },

@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {
   normalizePan,
   isValidNormalizedPan,
+  isDummyXuserPan,
   detectIpoApplicantGap,
   filterAndSortGapApplicants,
   GapDetectionIpo,
@@ -446,3 +447,120 @@ test("Gap Detector - Filtering and Sorting", () => {
   assert.equal(searchedPan.length, 1);
   assert.equal(searchedPan[0].pan, "PANAA1111A");
 });
+
+test("Dummy PAN Detection - isDummyXuserPan pattern matcher", () => {
+  // Matches: Starts with XUSER and ends with X
+  assert.equal(isDummyXuserPan("XUSER2532X"), true);
+  assert.equal(isDummyXuserPan("XUSER0808X"), true);
+  assert.equal(isDummyXuserPan("xuser1234x"), true);
+  assert.equal(isDummyXuserPan("  XUSER9999X  "), true);
+  assert.equal(isDummyXuserPan("XUSER0000X"), true);
+
+  // Non-dummy / genuine PANs:
+  assert.equal(isDummyXuserPan("ABCDE1234F"), false);
+  assert.equal(isDummyXuserPan("XUSER1234Y"), false); // does not end in X
+  assert.equal(isDummyXuserPan("AUSER1234X"), false); // does not start with XUSER
+  assert.equal(isDummyXuserPan(""), false);
+  assert.equal(isDummyXuserPan(null), false);
+  assert.equal(isDummyXuserPan(undefined), false);
+});
+
+test("Gap Detector - Exclude dummy XUSER...X PANs from historical calculation", () => {
+  const ipos: GapDetectionIpo[] = [
+    { id: "ipo_1", name: "Alpha IPO", metrics: { closeDate: "2026-08-01" } },
+    { id: "ipo_2", name: "Beta IPO (Current)", metrics: { closeDate: "2026-08-20" } },
+  ];
+
+  // 1 genuine PAN + 2 dummy XUSER...X PANs in previous IPO
+  const apps: GapDetectionApplication[] = [
+    {
+      id: "app_1",
+      ipoId: "ipo_1",
+      panNumbers: ["ABCDE1234F", "XUSER2532X", "XUSER0808X"],
+      applicantUsername: "user1",
+      status: "ALLOTTED",
+      createdAt: "2026-08-01T10:00:00Z",
+    },
+  ];
+
+  const result = detectIpoApplicantGap({
+    allIpos: ipos,
+    allApplications: apps,
+    selectedCurrentIpoId: "ipo_2",
+  });
+
+  // Only genuine PAN ABCDE1234F should be counted
+  assert.equal(result.historicalUniquePansCount, 1);
+  assert.equal(result.missingPansCount, 1);
+  assert.equal(result.missingApplicants.length, 1);
+  assert.equal(result.missingApplicants[0].pan, "ABCDE1234F");
+  assert.equal(result.isReconciled, true);
+});
+
+test("Gap Detector - Exclude dummy XUSER...X PANs from current IPO and reconcile", () => {
+  const ipos: GapDetectionIpo[] = [
+    { id: "ipo_1", name: "Alpha IPO", metrics: { closeDate: "2026-08-01" } },
+    { id: "ipo_2", name: "Beta IPO (Current)", metrics: { closeDate: "2026-08-20" } },
+  ];
+
+  // 1 genuine historical PAN + 1 dummy historical PAN
+  // Current IPO has 1 dummy PAN + 1 genuine other PAN
+  const apps: GapDetectionApplication[] = [
+    {
+      id: "app_1",
+      ipoId: "ipo_1",
+      panNumbers: ["ABCDE1234F", "XUSER2532X"],
+      status: "ALLOTTED",
+    },
+    {
+      id: "app_2",
+      ipoId: "ipo_2",
+      panNumbers: ["XUSER2532X", "ZZZZZ9999Z"],
+      status: "AWAITING",
+    },
+  ];
+
+  const result = detectIpoApplicantGap({
+    allIpos: ipos,
+    allApplications: apps,
+    selectedCurrentIpoId: "ipo_2",
+  });
+
+  assert.equal(result.historicalUniquePansCount, 1); // only ABCDE1234F
+  assert.equal(result.currentIpoApplicantsCount, 1); // only ZZZZZ9999Z
+  assert.equal(result.previousPansAppliedToCurrentCount, 0);
+  assert.equal(result.missingPansCount, 1);
+  assert.equal(result.missingApplicants[0].pan, "ABCDE1234F");
+  assert.equal(result.isReconciled, true);
+});
+
+test("Gap Detector - Example scenario: 107 historical PANs with 10 dummy PANs -> 97 considered", () => {
+  const ipos: GapDetectionIpo[] = [
+    { id: "ipo_1", name: "Alpha IPO", metrics: { closeDate: "2026-08-01" } },
+    { id: "ipo_2", name: "Beta IPO (Current)", metrics: { closeDate: "2026-08-20" } },
+  ];
+
+  const genuinePans = Array.from({ length: 97 }, (_, i) => `GENUI${String(i).padStart(4, "0")}A`);
+  const dummyPans = Array.from({ length: 10 }, (_, i) => `XUSER${String(i).padStart(4, "0")}X`);
+
+  const apps: GapDetectionApplication[] = [
+    {
+      id: "app_1",
+      ipoId: "ipo_1",
+      panNumbers: [...genuinePans, ...dummyPans],
+      status: "ALLOTTED",
+    },
+  ];
+
+  const result = detectIpoApplicantGap({
+    allIpos: ipos,
+    allApplications: apps,
+    selectedCurrentIpoId: "ipo_2",
+  });
+
+  assert.equal(result.historicalUniquePansCount, 97);
+  assert.equal(result.missingPansCount, 97);
+  assert.equal(result.isReconciled, true);
+  assert.equal(result.missingApplicants.every((item) => !item.pan.startsWith("XUSER")), true);
+});
+

@@ -116,7 +116,7 @@ export function MemberManagementView({
     if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
     debounceTimerRef.current = setTimeout(() => {
       applyFilters(val, activeRoleFilter, activeStatusFilter, 1);
-    }, 250);
+    }, 350);
   }
 
   function handleClearSearch() {

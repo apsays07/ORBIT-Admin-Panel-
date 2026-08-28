@@ -7,6 +7,7 @@ const dbName = process.env.MONGODB_DATABASE || "nexo";
 
 declare global {
   var _orbitMongoClientPromise: Promise<MongoClient> | undefined;
+  var _orbitIndexesEnsuredPromise: Promise<void> | undefined;
 }
 
 const clientOptions = {
@@ -34,7 +35,9 @@ export async function getDatabase(): Promise<Db | null> {
     }
     const client = await global._orbitMongoClientPromise;
     const db = client.db(dbName);
-    ensureIndexes(db).catch(() => {});
+    if (!global._orbitIndexesEnsuredPromise) {
+      global._orbitIndexesEnsuredPromise = ensureIndexes(db).catch(() => {});
+    }
     return db;
   } catch {
     global._orbitMongoClientPromise = undefined;

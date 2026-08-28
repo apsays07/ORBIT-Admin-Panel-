@@ -120,6 +120,16 @@ export function isValidNormalizedPan(pan: string): boolean {
 }
 
 /**
+ * Detect dummy / test PAN cards that match the XUSER pattern:
+ * Starts with "XUSER" and ends with "X" (e.g. "XUSER2532X", "XUSER0808X", etc.).
+ */
+export function isDummyXuserPan(pan?: string | null): boolean {
+  if (!pan || typeof pan !== "string") return false;
+  const clean = normalizePan(pan);
+  return clean.startsWith("XUSER") && clean.endsWith("X");
+}
+
+/**
  * Resolve chronological timestamp for an IPO.
  */
 export function getIpoTimestamp(ipo: GapDetectionIpo): number {
@@ -151,13 +161,14 @@ function getAppTimestamp(app: GapDetectionApplication, ipoFallbackTime: number):
 
 /**
  * Extract all valid normalized PAN cards from an application record.
+ * Automatically excludes dummy/test PANs following the XUSER...X pattern.
  */
 export function extractValidPansFromApplication(app: GapDetectionApplication): string[] {
   const pans: string[] = [];
   if (Array.isArray(app.panNumbers) && app.panNumbers.length > 0) {
     for (const raw of app.panNumbers) {
       const clean = normalizePan(raw);
-      if (clean && isValidNormalizedPan(clean)) {
+      if (clean && isValidNormalizedPan(clean) && !isDummyXuserPan(clean)) {
         pans.push(clean);
       }
     }
