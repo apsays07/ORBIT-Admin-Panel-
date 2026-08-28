@@ -24,6 +24,7 @@ import {
 import { generateEntityId } from "@/lib/utils";
 import { Filter } from "mongodb";
 import { verifyAdminSession } from "@/lib/auth/session";
+import { hashPassword } from "@/lib/auth/password";
 
 export interface GetMembersParams {
   query?: string;
@@ -55,12 +56,6 @@ function maskPan(pan?: string): string | undefined {
   return `${clean.slice(0, 5)}XXXX${clean.slice(-1)}`;
 }
 
-function hashPassword(password: string): { hash: string; salt: string; combined: string } {
-  const salt = crypto.randomBytes(16).toString("hex");
-  const hash = crypto.pbkdf2Sync(password, salt, 100000, 64, "sha512").toString("hex");
-  return { hash, salt, combined: `${salt}:${hash}` };
-}
-
 export async function checkUsernameAvailability(
   rawUsername: string,
   excludeMemberId?: string
@@ -86,9 +81,16 @@ export async function checkUsernameAvailability(
     filter.id = { $ne: excludeMemberId };
   }
 
-  const existing = await db.collection<MemberData>("members").findOne(filter);
-  if (existing) {
-    return { available: false, message: `@${username} is already taken.` };
+  const [existingMember, existingUser] = await Promise.all([
+    db.collection<MemberData>("members").findOne(filter),
+    db.collection("users").findOne({
+      username: { $regex: `^${username}$`, $options: "i" },
+      ...(excludeMemberId ? { memberId: { $ne: excludeMemberId } } : {}),
+    }),
+  ]);
+
+  if (existingMember || existingUser) {
+    return { available: false, message: "Username already exists." };
   }
 
   return { available: true };
@@ -390,7 +392,13 @@ export async function createMember(
 
     const avail = await checkUsernameAvailability(username);
     if (!avail.available) {
-      return { success: false, error: avail.message || "Username is already taken." };
+      return { success: false, error: avail.message || "Username already exists." };
+    }
+
+    // Password validation - DO NOT trim intentionally typed passwords
+    const password = input.password || "";
+    if (!password || password.length < 6) {
+      return { success: false, error: "Password must be at least 6 characters." };
     }
 
     // PAN Validation and Uniqueness Check
@@ -426,11 +434,10 @@ export async function createMember(
     const name = input.name?.trim() || username;
     const nowIso = new Date().toISOString();
     const memberId = generateEntityId("mem");
-    const cleanPass = input.password?.trim() || `${username}@${Math.floor(1000 + Math.random() * 9000)}`;
     const phoneClean = input.phone?.trim() || undefined;
     const emailFinal = emailClean || `${username}@nexo.private`;
 
-    const { hash, salt, combined } = hashPassword(cleanPass);
+    const { salt, combined } = hashPassword(password);
 
     const newMemberDoc: any = {
       id: memberId,
@@ -475,7 +482,7 @@ export async function createMember(
     // 1. Insert into canonical members collection (NEVER store plaintext password)
     await db.collection("members").insertOne(newMemberDoc);
 
-    // 2. Insert into canonical users collection for cross-website authentication
+    // 2. Insert into canonical users collection for cross-website authentication (with atomic rollback)
     const userDoc: any = {
       id: `usr_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
       memberId,
@@ -495,7 +502,16 @@ export async function createMember(
       updatedAt: nowIso,
     };
 
-    await db.collection("users").insertOne(userDoc);
+    try {
+      await db.collection("users").insertOne(userDoc);
+    } catch (userErr: any) {
+      // Rollback member document if user creation failed
+      await db.collection("members").deleteOne({ id: memberId });
+      if (userErr?.code === 11000) {
+        return { success: false, error: "Username already exists." };
+      }
+      throw userErr;
+    }
 
     // Authoritative audit log
     await logAuditEvent({
@@ -522,6 +538,9 @@ export async function createMember(
       member: JSON.parse(JSON.stringify({ ...newMemberDoc, passwordHash: undefined, salt: undefined, _id: undefined })),
     };
   } catch (err: unknown) {
+    if ((err as any)?.code === 11000) {
+      return { success: false, error: "Username already exists." };
+    }
     const msg = err instanceof Error ? err.message : "Failed to create member.";
     return { success: false, error: msg };
   }
@@ -702,7 +721,7 @@ export async function resetMemberPassword(
     const db = await getDatabase();
     if (!db) return { success: false, error: "Database unavailable." };
 
-    if (!newPassword || newPassword.trim().length < 6) {
+    if (!newPassword || newPassword.length < 6) {
       return { success: false, error: "Password must be at least 6 characters." };
     }
 
@@ -711,8 +730,7 @@ export async function resetMemberPassword(
       return { success: false, error: "Member not found." };
     }
 
-    const cleanPass = newPassword.trim();
-    const { salt, combined } = hashPassword(cleanPass);
+    const { salt, combined } = hashPassword(newPassword);
     const nowIso = new Date().toISOString();
 
     await Promise.all([

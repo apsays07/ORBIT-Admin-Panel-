@@ -42,9 +42,11 @@ export function CreateMemberModal({
   const toast = useToast();
   const usernameInputRef = useRef<HTMLInputElement | null>(null);
 
+  // Form input states (unmodified as typed by user)
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(true);
+  const [isCapsLockOn, setIsCapsLockOn] = useState(false);
 
   // Validation States
   const [usernameStatus, setUsernameStatus] = useState<"idle" | "checking" | "available" | "unavailable">("idle");
@@ -61,6 +63,7 @@ export function CreateMemberModal({
     formatted: string;
   } | null>(null);
   const [hasCopied, setHasCopied] = useState(false);
+  const [hasCopiedPassword, setHasCopiedPassword] = useState(false);
   const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
@@ -75,30 +78,49 @@ export function CreateMemberModal({
   });
 
   function generateRandomPassword() {
-    const chars = "abcdefghjkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789!@#$";
+    const uppercase = "ABCDEFGHJKLMNPQRSTUVWXYZ";
+    const lowercase = "abcdefghjkmnpqrstuvwxyz";
+    const numbers = "23456789";
+    const symbols = "!@#$%&*";
+    const all = uppercase + lowercase + numbers + symbols;
+
     let pass = "";
-    for (let i = 0; i < 10; i++) {
-      pass += chars.charAt(Math.floor(Math.random() * chars.length));
+    // Ensure at least one from each class
+    pass += uppercase.charAt(Math.floor(Math.random() * uppercase.length));
+    pass += lowercase.charAt(Math.floor(Math.random() * lowercase.length));
+    pass += numbers.charAt(Math.floor(Math.random() * numbers.length));
+    pass += symbols.charAt(Math.floor(Math.random() * symbols.length));
+
+    for (let i = 4; i < 12; i++) {
+      pass += all.charAt(Math.floor(Math.random() * all.length));
     }
-    setPassword(pass);
+    // Shuffle
+    const shuffled = pass.split("").sort(() => 0.5 - Math.random()).join("");
+    setPassword(shuffled);
+    setShowPassword(true);
   }
 
   function handleUsernameChange(val: string) {
-    let clean = val.trim().toLowerCase();
-    if (clean.startsWith("@")) clean = clean.slice(1);
-    setUsername(clean);
+    // Preserve typed characters without destructive on-keystroke mutation
+    let inputVal = val;
+    if (inputVal.startsWith("@")) {
+      inputVal = inputVal.slice(1);
+    }
+    setUsername(inputVal);
 
     if (usernameTimerRef.current) clearTimeout(usernameTimerRef.current);
 
+    const clean = inputVal.trim().toLowerCase();
+
     if (!clean) {
       setUsernameStatus("idle");
-      setUsernameError("Username is required.");
+      setUsernameError(null);
       return;
     }
 
     if (!/^[a-z0-9_.-]{3,30}$/.test(clean)) {
       setUsernameStatus("unavailable");
-      setUsernameError("3-30 characters (lowercase letters, numbers, _, -, .)");
+      setUsernameError("3-30 characters (letters, numbers, _, -, .)");
       return;
     }
 
@@ -112,7 +134,7 @@ export function CreateMemberModal({
         setUsernameError(null);
       } else {
         setUsernameStatus("unavailable");
-        setUsernameError(res.message || "Username is already taken.");
+        setUsernameError(res.message || "Username already exists.");
       }
     }, 300);
   }
@@ -128,8 +150,21 @@ export function CreateMemberModal({
     }
   }
 
+  async function copyPasswordOnly() {
+    if (!password) return;
+    try {
+      await navigator.clipboard.writeText(password);
+      setHasCopiedPassword(true);
+      toast.success("Password Copied", "Password copied to clipboard.");
+      setTimeout(() => setHasCopiedPassword(false), 2000);
+    } catch {
+      toast.error("Copy Failed", "Please manually copy the password.");
+    }
+  }
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
+    if (isSubmitting) return;
     setFormError(null);
 
     const cleanUser = username.trim().toLowerCase().replace(/^@/, "");
@@ -138,18 +173,23 @@ export function CreateMemberModal({
       return;
     }
 
-    if (usernameStatus === "unavailable") {
-      setFormError(usernameError || "Username is not available.");
+    if (!/^[a-z0-9_.-]{3,30}$/.test(cleanUser)) {
+      setFormError("Username must be 3-30 characters (letters, numbers, _, -, .).");
       return;
     }
 
-    const cleanPass = password.trim();
-    if (!cleanPass) {
+    if (usernameStatus === "unavailable") {
+      setFormError(usernameError || "Username already exists.");
+      return;
+    }
+
+    // Do NOT trim password — preserve user's exact intended string
+    if (!password) {
       setFormError("Password is required.");
       return;
     }
 
-    if (cleanPass.length < 6) {
+    if (password.length < 6) {
       setFormError("Password must be at least 6 characters.");
       return;
     }
@@ -159,7 +199,7 @@ export function CreateMemberModal({
     const payload: CreateMemberInput = {
       username: cleanUser,
       name: cleanUser,
-      password: cleanPass,
+      password: password,
       role: "MEMBER",
       status: "ACTIVE",
     };
@@ -168,7 +208,7 @@ export function CreateMemberModal({
     setIsSubmitting(false);
 
     if (res.success && res.member) {
-      const formattedText = `username:"${cleanUser}"\npassword:"${cleanPass}"`;
+      const formattedText = `username:"${cleanUser}"\npassword:"${password}"`;
 
       // Automatically copy to clipboard for convenience
       try {
@@ -180,13 +220,14 @@ export function CreateMemberModal({
 
       setCreatedCredentials({
         username: cleanUser,
-        passwordText: cleanPass,
+        passwordText: password,
         formatted: formattedText,
       });
 
-      toast.success("Member Created", `@${cleanUser} successfully created in MongoDB.`);
+      toast.success("Member Created", `@${cleanUser} successfully created and ready to log in.`);
       onCreated(res.member);
     } else {
+      // Preserve form values on error so user can correct without retyping everything
       setFormError(res.error || "Failed to create member account.");
     }
   }
@@ -199,6 +240,8 @@ export function CreateMemberModal({
     setFormError(null);
     setCreatedCredentials(null);
     setHasCopied(false);
+    setHasCopiedPassword(false);
+    setIsCapsLockOn(false);
     onClose();
   }
 
@@ -210,6 +253,8 @@ export function CreateMemberModal({
     setFormError(null);
     setCreatedCredentials(null);
     setHasCopied(false);
+    setHasCopiedPassword(false);
+    setIsCapsLockOn(false);
   }
 
   if (!isOpen || !mounted) return null;
@@ -236,6 +281,7 @@ export function CreateMemberModal({
           <button
             type="button"
             onClick={handleModalClose}
+            aria-label="Close modal"
             className="p-1 rounded-md text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800 transition-colors cursor-pointer"
           >
             <X className="h-4 w-4" />
@@ -311,8 +357,8 @@ export function CreateMemberModal({
             </div>
           </div>
         ) : (
-          /* SIMPLE FORM */
-          <form onSubmit={handleSubmit} className="flex flex-col flex-1 overflow-hidden">
+          /* CREATION FORM */
+          <form onSubmit={handleSubmit} className="flex flex-col flex-1 overflow-hidden" noValidate>
             <div className="p-5 space-y-3.5 flex-1 overflow-y-auto">
               {formError && (
                 <div className="p-2.5 rounded-md bg-rose-950/30 border border-rose-800/50 text-rose-300 text-xs flex items-center gap-2 font-medium">
@@ -324,7 +370,7 @@ export function CreateMemberModal({
               {/* Username */}
               <div className="space-y-1">
                 <div className="flex items-center justify-between">
-                  <label className="text-xs font-medium text-zinc-300 flex items-center gap-1">
+                  <label htmlFor="create-member-username" className="text-xs font-medium text-zinc-300 flex items-center gap-1">
                     <User className="h-3 w-3 text-zinc-400" />
                     <span>Username</span>
                     <span className="text-rose-400">*</span>
@@ -346,12 +392,18 @@ export function CreateMemberModal({
                   )}
                 </div>
                 <div className="relative">
-                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500 font-mono text-xs select-none">
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500 font-mono text-xs select-none pointer-events-none">
                     @
                   </span>
                   <Input
                     ref={usernameInputRef}
+                    id="create-member-username"
+                    name="username"
                     type="text"
+                    autoComplete="username"
+                    autoCapitalize="none"
+                    autoCorrect="off"
+                    spellCheck={false}
                     value={username}
                     onChange={(e) => handleUsernameChange(e.target.value)}
                     placeholder="e.g. rohit_sharma"
@@ -365,29 +417,62 @@ export function CreateMemberModal({
               {/* Password */}
               <div className="space-y-1">
                 <div className="flex items-center justify-between">
-                  <label className="text-xs font-medium text-zinc-300 flex items-center gap-1">
+                  <label htmlFor="create-member-password" className="text-xs font-medium text-zinc-300 flex items-center gap-1">
                     <KeyRound className="h-3 w-3 text-zinc-400" />
                     <span>Password</span>
                     <span className="text-rose-400">*</span>
+                    {isCapsLockOn && (
+                      <span className="ml-1 text-[10px] text-amber-400 font-medium flex items-center gap-0.5">
+                        <AlertCircle className="h-2.5 w-2.5" /> Caps Lock
+                      </span>
+                    )}
                   </label>
-                  <button
-                    type="button"
-                    onClick={generateRandomPassword}
-                    className="text-[11px] text-zinc-400 hover:text-zinc-200 font-medium flex items-center gap-1 transition-colors cursor-pointer"
-                  >
-                    <Sparkles className="h-3 w-3" /> Generate Secure
-                  </button>
+                  <div className="flex items-center gap-2">
+                    {password && (
+                      <button
+                        type="button"
+                        onClick={copyPasswordOnly}
+                        className="text-[11px] text-zinc-400 hover:text-zinc-200 font-medium flex items-center gap-1 transition-colors cursor-pointer"
+                      >
+                        {hasCopiedPassword ? (
+                          <><Check className="h-3 w-3 text-emerald-400" /> Copied</>
+                        ) : (
+                          <><Copy className="h-3 w-3" /> Copy</>
+                        )}
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      onClick={generateRandomPassword}
+                      className="text-[11px] text-zinc-400 hover:text-zinc-200 font-medium flex items-center gap-1 transition-colors cursor-pointer"
+                    >
+                      <Sparkles className="h-3 w-3" /> Generate Secure
+                    </button>
+                  </div>
                 </div>
 
                 <div className="relative">
                   <Input
+                    id="create-member-password"
+                    name="password"
                     type={showPassword ? "text" : "password"}
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
+                    autoComplete="new-password"
                     autoCapitalize="none"
                     autoCorrect="off"
                     spellCheck={false}
-                    placeholder="Enter password (min 6 chars)"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.getModifierState) {
+                        setIsCapsLockOn(e.getModifierState("CapsLock"));
+                      }
+                    }}
+                    onKeyUp={(e) => {
+                      if (e.getModifierState) {
+                        setIsCapsLockOn(e.getModifierState("CapsLock"));
+                      }
+                    }}
+                    placeholder="Enter password (min 6 characters)"
                     disabled={isSubmitting}
                     className="h-9 pr-9 bg-zinc-900 border-zinc-800 text-xs font-mono text-zinc-100 rounded-md focus-visible:ring-zinc-700"
                   />
@@ -406,9 +491,22 @@ export function CreateMemberModal({
                     )}
                   </button>
                 </div>
-                <p className="text-[11px] text-zinc-500">
-                  Salted & hashed using PBKDF2 SHA-512 for secure cross-website authentication.
-                </p>
+
+                {/* Password Requirements Indicator */}
+                <div className="flex items-center justify-between text-[11px] pt-0.5">
+                  <span className={cn(
+                    "flex items-center gap-1 transition-colors",
+                    password.length >= 6 ? "text-emerald-400" : "text-zinc-500"
+                  )}>
+                    {password.length >= 6 ? (
+                      <Check className="h-3 w-3 text-emerald-400" />
+                    ) : (
+                      <span className="h-1.5 w-1.5 rounded-full bg-zinc-600" />
+                    )}
+                    <span>Min. 6 characters ({password.length}/6)</span>
+                  </span>
+                  <span className="text-zinc-600 text-[10.5px]">PBKDF2 SHA-512</span>
+                </div>
               </div>
             </div>
 
@@ -427,7 +525,7 @@ export function CreateMemberModal({
 
               <Button
                 type="submit"
-                disabled={isSubmitting || usernameStatus === "checking" || !username.trim() || !password.trim()}
+                disabled={isSubmitting || usernameStatus === "checking" || !username.trim() || password.length < 6}
                 isLoading={isSubmitting}
                 loadingText="Creating..."
                 className="h-8 min-w-[140px] px-4 text-xs font-medium bg-zinc-100 hover:bg-white text-zinc-950 rounded-md flex items-center justify-center gap-1.5 cursor-pointer transition-colors disabled:opacity-50 disabled:cursor-not-allowed active:scale-95"

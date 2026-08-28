@@ -4,22 +4,8 @@ import { cookies } from "next/headers";
 import { getDatabase } from "@/lib/db/mongodb";
 import { AdminProfileData, PasswordChangeResult } from "@/types/profile";
 import { MemberData } from "@/types/member";
-import crypto from "crypto";
 import { verifyAdminSession } from "@/lib/auth/session";
-
-function hashPassword(password: string): { hash: string; salt: string; combined: string } {
-  const salt = crypto.randomBytes(16).toString("hex");
-  const hash = crypto.pbkdf2Sync(password, salt, 100000, 64, "sha512").toString("hex");
-  const combined = `${salt}:${hash}`;
-  return { hash, salt, combined };
-}
-
-function verifyPassword(password: string, combined: string): boolean {
-  const [salt, storedHash] = combined.split(":");
-  if (!salt || !storedHash) return false;
-  const hash = crypto.pbkdf2Sync(password, salt, 100000, 64, "sha512").toString("hex");
-  return hash === storedHash;
-}
+import { hashPassword, verifyPassword } from "@/lib/auth/password";
 
 export async function getAdminProfile(): Promise<AdminProfileData | null> {
   try {
@@ -74,7 +60,7 @@ export async function changeAdminPassword(
   newPassword: string
 ): Promise<PasswordChangeResult> {
   try {
-    if (!newPassword || newPassword.trim().length < 6) {
+    if (!newPassword || newPassword.length < 6) {
       return { success: false, error: "New password must be at least 6 characters." };
     }
 
@@ -95,21 +81,27 @@ export async function changeAdminPassword(
     // Verify current password against stored hash
     const storedHash = member.passwordHash as string | undefined;
     if (storedHash) {
-      const valid = verifyPassword(currentPassword.trim(), storedHash);
+      const valid = verifyPassword(currentPassword, storedHash);
       if (!valid) return { success: false, error: "Current password is incorrect." };
     }
 
-    const { combined, salt } = hashPassword(newPassword.trim());
+    const { combined, salt } = hashPassword(newPassword);
     const nowIso = new Date().toISOString();
 
     await Promise.all([
       db.collection("members").updateOne(
         { _id: member._id },
-        { $set: { passwordHash: combined, salt, password: newPassword.trim(), updatedAt: nowIso } }
+        {
+          $set: { passwordHash: combined, salt, updatedAt: nowIso },
+          $unset: { password: "" },
+        }
       ),
       db.collection("users").updateOne(
         { memberId: member.id },
-        { $set: { passwordHash: combined, password: newPassword.trim(), updatedAt: nowIso } }
+        {
+          $set: { passwordHash: combined, updatedAt: nowIso },
+          $unset: { password: "" },
+        }
       ),
     ]);
 

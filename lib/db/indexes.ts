@@ -54,6 +54,12 @@ export async function ensureIndexes(db: Db): Promise<void> {
       db.collection("sessions").createIndex({ id: 1 }, { unique: true }),
       db.collection("sessions").createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 }),
       db.collection("sessions").createIndex({ userId: 1 }),
+
+      // Users collection indexes (authentication)
+      db.collection("users").createIndex({ id: 1 }, { unique: true }),
+      db.collection("users").createIndex({ username: 1 }, { unique: true }),
+      db.collection("users").createIndex({ memberId: 1 }, { sparse: true }),
+      db.collection("users").createIndex({ emailNormalized: 1 }, { sparse: true }),
     ]);
   } catch {
     // Indexes already exist or background index creation in progress
