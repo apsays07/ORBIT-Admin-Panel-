@@ -13,6 +13,8 @@ import { NexoIPORecord } from "@/types/ipo";
 import { logAuditEvent } from "@/lib/audit/actions";
 import { isValidPan, formatCombinedApplicants, generateEntityId } from "@/lib/utils";
 import { Filter } from "mongodb";
+import { verifyAdminSession } from "@/lib/auth/session";
+import { syncIpoProfitDistribution } from "@/lib/profit/sync";
 
 export interface IpoOption {
   id: string;
@@ -68,23 +70,6 @@ export interface GetApplicationsResponse {
   availableStatuses: string[];
   selectedIpoId?: string;
   selectedIpoName?: string;
-}
-
-/**
- * Verify admin session server-side
- */
-async function verifyAdminSession(): Promise<string> {
-  const cookieStore = await cookies();
-  const sessionCookie = cookieStore.get("orbit_session");
-  if (!sessionCookie) {
-    throw new Error("Unauthorized: Admin session required.");
-  }
-  try {
-    const parsed = JSON.parse(sessionCookie.value);
-    return parsed.user || "Admin";
-  } catch {
-    throw new Error("Unauthorized: Invalid session.");
-  }
 }
 
 import { ApplicationService } from "@/lib/services/application.service";
@@ -350,13 +335,8 @@ export async function createSoloApplicationsBatch(
       },
     });
 
-    // 8. Revalidate all dependent routes
-    revalidatePath("/ad/applications");
-    revalidatePath("/ad/allotment");
-    revalidatePath("/ad/ipo");
-    revalidatePath("/ad/ipo/history");
-    revalidatePath("/ad/members");
-    revalidatePath("/ad/audit");
+    // 8. Synchronize profit distribution & revalidate all dependent routes
+    await syncIpoProfitDistribution(ipo.id, db);
 
     console.info(`[ORBIT][CREATE_SOLO_APPS] Created ${createdDocs.length} solo applications for ${ipo.name} by ${adminUser}`);
 
@@ -517,13 +497,7 @@ export async function createMultiFriendApplication(
       },
     });
 
-    revalidatePath("/ad/applications");
-    revalidatePath("/ad/allotment");
-    revalidatePath("/ad/ipo");
-    revalidatePath("/ad/ipo/history");
-    revalidatePath("/ad/members");
-    revalidatePath("/ad/profit");
-    revalidatePath("/ad/audit");
+    await syncIpoProfitDistribution(ipo.id, db);
 
     return {
       success: true,
@@ -730,14 +704,8 @@ export async function createMultiFriendApplicationsBatch(
       },
     });
 
-    // 8. Revalidate routes
-    revalidatePath("/ad/applications");
-    revalidatePath("/ad/allotment");
-    revalidatePath("/ad/ipo");
-    revalidatePath("/ad/ipo/history");
-    revalidatePath("/ad/members");
-    revalidatePath("/ad/profit");
-    revalidatePath("/ad/audit");
+    // 8. Synchronize profit distribution & revalidate routes
+    await syncIpoProfitDistribution(ipo.id, db);
 
     console.info(
       `[ORBIT][CREATE_MULTI_FRIEND_BATCH] Created ${createdDocs.length} multi-friend applications for ${ipo.name} by ${adminUser}`
@@ -910,12 +878,11 @@ export async function updateApplication(
       },
     });
 
-    revalidatePath("/ad/applications");
-    revalidatePath(`/ad/applications/${id}`);
-    revalidatePath("/ad/allotment");
-    revalidatePath("/ad/members");
-    revalidatePath("/ad/ipo");
-    revalidatePath("/ad/audit");
+    // Synchronize profit distribution for previous and updated IPO
+    if (existing.ipoId && existing.ipoId !== ipoId) {
+      await syncIpoProfitDistribution(existing.ipoId, db);
+    }
+    await syncIpoProfitDistribution(ipoId, db);
 
     console.info(`[ORBIT][UPDATE_APP] Application ${id} updated by ${adminUser}`);
 
@@ -970,9 +937,11 @@ export async function quickUpdateApplicationStatus(
       subtitle: `Admin updated application ${id} status to ${status}`,
     });
 
-    revalidatePath("/ad/applications");
-    revalidatePath(`/ad/applications/${id}`);
-    revalidatePath("/ad/allotment");
+    const existing = await db.collection<ApplicationRecord>("applications").findOne({ id });
+    if (existing?.ipoId) {
+      await syncIpoProfitDistribution(existing.ipoId, db);
+    }
+
     return { success: true };
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : "Failed to update status.";
@@ -995,6 +964,13 @@ export async function bulkUpdateApplicationStatus(
     if (!ids || ids.length === 0) {
       return { success: false, error: "No applications selected." };
     }
+
+    const modifiedApps = await db
+      .collection<ApplicationRecord>("applications")
+      .find({ id: { $in: ids } }, { projection: { ipoId: 1 } })
+      .toArray();
+
+    const affectedIpoIds = Array.from(new Set(modifiedApps.map((a) => a.ipoId).filter(Boolean)));
 
     const nowIso = new Date().toISOString();
     const result = await db.collection("applications").updateMany(
@@ -1019,8 +995,9 @@ export async function bulkUpdateApplicationStatus(
       metadata: { ids, status, modifiedCount: result.modifiedCount },
     });
 
-    revalidatePath("/ad/applications");
-    revalidatePath("/ad/allotment");
+    for (const ipoId of affectedIpoIds) {
+      await syncIpoProfitDistribution(ipoId, db);
+    }
     revalidatePath("/ad/members");
     return { success: true, count: result.modifiedCount };
   } catch (err: unknown) {
@@ -1044,6 +1021,12 @@ export async function bulkDeleteApplications(
       return { success: false, error: "No applications selected." };
     }
 
+    const toDeleteApps = await db
+      .collection<ApplicationRecord>("applications")
+      .find({ id: { $in: ids } }, { projection: { ipoId: 1 } })
+      .toArray();
+
+    const affectedIpoIds = Array.from(new Set(toDeleteApps.map((a) => a.ipoId).filter(Boolean)));
     const result = await db.collection("applications").deleteMany({ id: { $in: ids } });
 
     await logAuditEvent({
@@ -1057,11 +1040,9 @@ export async function bulkDeleteApplications(
       metadata: { ids, deletedCount: result.deletedCount },
     });
 
-    revalidatePath("/ad/applications");
-    revalidatePath("/ad/allotment");
-    revalidatePath("/ad/members");
-    revalidatePath("/ad/ipo");
-    revalidatePath("/ad/audit");
+    for (const ipoId of affectedIpoIds) {
+      await syncIpoProfitDistribution(ipoId, db);
+    }
 
     return { success: true, count: result.deletedCount };
   } catch (err: unknown) {
@@ -1109,11 +1090,9 @@ export async function deleteApplication(id: string): Promise<{ success: boolean;
       },
     });
 
-    revalidatePath("/ad/applications");
-    revalidatePath("/ad/allotment");
-    revalidatePath("/ad/members");
-    revalidatePath("/ad/ipo");
-    revalidatePath("/ad/audit");
+    if (existing.ipoId) {
+      await syncIpoProfitDistribution(existing.ipoId, db);
+    }
 
     console.info(`[ORBIT][DELETE_APP] Application ${id} deleted by ${adminUser}`);
 
@@ -1172,11 +1151,9 @@ export async function restoreApplication(
       },
     });
 
-    revalidatePath("/ad/applications");
-    revalidatePath("/ad/allotment");
-    revalidatePath("/ad/members");
-    revalidatePath("/ad/ipo");
-    revalidatePath("/ad/audit");
+    if (record.ipoId) {
+      await syncIpoProfitDistribution(record.ipoId, db);
+    }
 
     console.info(`[ORBIT][RESTORE_APP] Application ${record.id} restored by ${adminUser}`);
 

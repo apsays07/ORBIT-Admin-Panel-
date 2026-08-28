@@ -1,17 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { resetMemberPassword } from "@/lib/member/actions";
-import { cookies } from "next/headers";
+import { validateSession } from "@/lib/auth/session";
 
 async function verifyAdminAuth() {
-  const cookieStore = await cookies();
-  const session = cookieStore.get("orbit_session");
-  if (!session?.value) return false;
-  try {
-    const data = JSON.parse(session.value);
-    return Boolean(data.user);
-  } catch {
-    return false;
-  }
+  const result = await validateSession();
+  return result.authenticated;
 }
 
 /**

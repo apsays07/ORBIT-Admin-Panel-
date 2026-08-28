@@ -5,18 +5,7 @@ import { getDatabase } from "@/lib/db/mongodb";
 import { AdminProfileData, PasswordChangeResult } from "@/types/profile";
 import { MemberData } from "@/types/member";
 import crypto from "crypto";
-
-async function verifyAdminSession(): Promise<string> {
-  const cookieStore = await cookies();
-  const sessionCookie = cookieStore.get("orbit_session");
-  if (!sessionCookie) throw new Error("Unauthorized");
-  try {
-    const parsed = JSON.parse(sessionCookie.value);
-    return parsed.user || "ankitgod";
-  } catch {
-    return "ankitgod";
-  }
-}
+import { verifyAdminSession } from "@/lib/auth/session";
 
 function hashPassword(password: string): { hash: string; salt: string; combined: string } {
   const salt = crypto.randomBytes(16).toString("hex");

@@ -18,7 +18,7 @@ export class PerformanceService {
     const db = await getDatabase();
     if (!db) return [];
 
-    const [membersRaw, appsRaw, distsRaw] = await Promise.all([
+    const [membersRaw, appsRaw, distsRaw, iposRaw] = await Promise.all([
       db
         .collection("members")
         .find({}, { projection: { _id: 0, id: 1, name: 1, username: 1, avatar: 1 } })
@@ -49,7 +49,12 @@ export class PerformanceService {
         .toArray(),
       db
         .collection("profit_distributions")
-        .find({}, { projection: { memberPayouts: 1 } })
+        .find({}, { projection: { memberPayouts: 1, ipoId: 1 } })
+        .maxTimeMS(8000)
+        .toArray(),
+      db
+        .collection("ipos")
+        .find({}, { projection: { id: 1, profitDistribution: 1 } })
         .maxTimeMS(8000)
         .toArray(),
     ]);
@@ -67,13 +72,27 @@ export class PerformanceService {
     });
 
     const profitMap = new Map<string, number>();
+    const seenIpoDistributions = new Set<string>();
+
     distsRaw.forEach((dist: any) => {
+      if (dist.ipoId) seenIpoDistributions.add(dist.ipoId);
       (dist.memberPayouts || []).forEach((p: { memberId: string; profit: number }) => {
         if (p.memberId) {
           const cur = profitMap.get(p.memberId) || 0;
           profitMap.set(p.memberId, safeAdd(cur, p.profit));
         }
       });
+    });
+
+    iposRaw.forEach((ipo: any) => {
+      if (ipo.id && !seenIpoDistributions.has(ipo.id) && ipo.profitDistribution?.memberPayouts) {
+        (ipo.profitDistribution.memberPayouts || []).forEach((p: { memberId: string; profit: number }) => {
+          if (p.memberId) {
+            const cur = profitMap.get(p.memberId) || 0;
+            profitMap.set(p.memberId, safeAdd(cur, p.profit));
+          }
+        });
+      }
     });
 
     const capitalMap = new Map<string, number>();

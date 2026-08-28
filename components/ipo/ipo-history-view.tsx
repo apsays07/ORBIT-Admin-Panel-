@@ -34,6 +34,7 @@ import { Input } from "@/components/ui/input";
 import { Card } from "@/components/ui/card";
 import { IpoModal } from "./ipo-modal";
 import { IpoHistoryAnalytics } from "./ipo-history-analytics";
+import { PreviousApplicantsGapView } from "./previous-applicants-gap-view";
 import { cn } from "@/lib/utils";
 
 interface IpoHistoryViewProps {
@@ -218,6 +219,12 @@ export function IpoHistoryView({
         rawHistoricalIpos={rawHistoricalIpos}
         rawHistoricalApps={rawHistoricalApps}
         onOpenAddIpo={handleOpenAdd}
+      />
+
+      {/* Previous Applicants Not Applied in Current IPO */}
+      <PreviousApplicantsGapView
+        allIpos={rawHistoricalIpos}
+        allApplications={rawHistoricalApps}
       />
 
       {/* Section Divider & Catalog Title */}

@@ -15,6 +15,7 @@ import {
   normalizeNumeric,
   reconcileProfitDistribution,
 } from "@/lib/calculations";
+import { verifyAdminSession } from "@/lib/auth/session";
 
 export interface ProfitIpoOption {
   id: string;
@@ -51,20 +52,6 @@ export interface ProfitDistributionViewData {
   publishedAt?: string;
   publishedBy?: string;
   members: CalculatedMemberRow[];
-}
-
-async function verifyAdminSession(): Promise<string> {
-  const cookieStore = await cookies();
-  const sessionCookie = cookieStore.get("orbit_session");
-  if (!sessionCookie) {
-    throw new Error("Unauthorized: Admin session required.");
-  }
-  try {
-    const parsed = JSON.parse(sessionCookie.value);
-    return parsed.user || "Admin";
-  } catch {
-    throw new Error("Unauthorized: Invalid session.");
-  }
 }
 
 import { ProfitService } from "@/lib/services/profit.service";

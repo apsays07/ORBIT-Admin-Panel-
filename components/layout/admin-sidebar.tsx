@@ -20,6 +20,7 @@ import {
   UserCircle,
 } from "lucide-react";
 import { logoutAdmin } from "@/lib/auth/actions";
+import { useAuth } from "@/components/providers/auth-provider";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { MemberAvatar } from "@/components/ui/member-avatar";
@@ -55,6 +56,7 @@ export const navItems: NavItem[] = [
 export function AdminSidebar({ userEmail = "ankitgod", dbStatus = "connected" }: AdminSidebarProps) {
   const pathname = usePathname();
   const router = useRouter();
+  const { logout } = useAuth();
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
 
   return (
@@ -177,10 +179,7 @@ export function AdminSidebar({ userEmail = "ankitgod", dbStatus = "connected" }:
 
           <button
             type="button"
-            onClick={async () => {
-              await logoutAdmin();
-              router.push("/ad/login");
-            }}
+            onClick={() => logout()}
             title="Sign out"
             className="p-1.5 rounded-lg hover:bg-zinc-800 text-zinc-500 hover:text-rose-400 transition-colors cursor-pointer"
           >

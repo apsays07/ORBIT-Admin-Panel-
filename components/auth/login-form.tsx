@@ -26,9 +26,11 @@ import { cn } from "@/lib/utils";
 
 interface LoginFormProps {
   dbStatus: "connected" | "disconnected" | "missing_config";
+  initialRedirect?: string;
+  initialReason?: string;
 }
 
-export function LoginForm({ dbStatus }: LoginFormProps) {
+export function LoginForm({ dbStatus, initialRedirect = "", initialReason = "" }: LoginFormProps) {
   const router = useRouter();
   const [identifier, setIdentifier] = useState("");
   const [password, setPassword] = useState("");
@@ -43,9 +45,18 @@ export function LoginForm({ dbStatus }: LoginFormProps) {
 
   useEffect(() => {
     if (state?.success && state.redirectUrl) {
+      try {
+        if (typeof window !== "undefined" && "BroadcastChannel" in window) {
+          const channel = new BroadcastChannel("orbit_auth_sync");
+          channel.postMessage({ type: "LOGIN", user: identifier, timestamp: Date.now() });
+          channel.close();
+        }
+      } catch {
+        // Ignore
+      }
       router.push(state.redirectUrl);
     }
-  }, [state, router]);
+  }, [state, router, identifier]);
 
   // Ecosystem stages for the visual pipeline
   const ecosystemStages = [
@@ -281,6 +292,23 @@ export function LoginForm({ dbStatus }: LoginFormProps) {
 
           {/* Form */}
           <form action={formAction} className="space-y-5" noValidate>
+            <input type="hidden" name="redirect" value={initialRedirect} />
+            <input type="hidden" name="rememberMe" value={rememberMe ? "on" : "off"} />
+
+            {/* Session Expiration / Notification Notice */}
+            {initialReason === "expired" && !state?.error && (
+              <div className="flex items-center gap-2.5 p-3 text-xs text-amber-300 bg-amber-950/40 border border-amber-900/60 rounded-xl font-medium mb-4 animate-in fade-in">
+                <AlertCircle className="h-4 w-4 shrink-0 text-amber-400" />
+                <span>Your session has expired. Please sign in again.</span>
+              </div>
+            )}
+            {initialReason === "logged_out" && !state?.error && (
+              <div className="flex items-center gap-2.5 p-3 text-xs text-blue-300 bg-blue-950/40 border border-blue-900/60 rounded-xl font-medium mb-4 animate-in fade-in">
+                <ShieldCheck className="h-4 w-4 shrink-0 text-blue-400" />
+                <span>You have been signed out.</span>
+              </div>
+            )}
+
             {/* Inline Error Notice (Smooth, non-shifting space) */}
             <div
               className={cn(

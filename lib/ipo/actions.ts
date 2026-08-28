@@ -6,6 +6,7 @@ import { getDatabase } from "@/lib/db/mongodb";
 import { NexoIPORecord, NexoIPOStatus, ProfitDistribution } from "@/types/ipo";
 import { Filter, OptionalUnlessRequiredId } from "mongodb";
 import { logAuditEvent } from "@/lib/audit/actions";
+import { verifyAdminSession } from "@/lib/auth/session";
 
 export interface GetIposParams {
   query?: string;
@@ -42,23 +43,6 @@ export interface GetIposResponse {
   analyticsData?: IpoHistoryAnalyticsData;
   rawHistoricalIpos?: any[];
   rawHistoricalApps?: any[];
-}
-
-/**
- * Verify admin session server-side
- */
-async function verifyAdminSession(): Promise<string> {
-  const cookieStore = await cookies();
-  const sessionCookie = cookieStore.get("orbit_session");
-  if (!sessionCookie) {
-    throw new Error("Unauthorized: Admin session required.");
-  }
-  try {
-    const parsed = JSON.parse(sessionCookie.value);
-    return parsed.user || "Admin";
-  } catch {
-    throw new Error("Unauthorized: Invalid session.");
-  }
 }
 
 import { IpoService } from "@/lib/services/ipo.service";
@@ -184,12 +168,18 @@ export async function getHistoricalIpos(params: GetIposParams = {}): Promise<Get
             _id: 0,
             id: 1,
             ipoId: 1,
+            ipoName: 1,
+            memberId: 1,
+            applicantName: 1,
+            applicantUsername: 1,
             numberOfPanCards: 1,
             panNumbers: 1,
             totalContribution: 1,
             status: 1,
             allotmentStatus: 1,
             allottedIndices: 1,
+            fundingStructure: 1,
+            contributors: 1,
             createdAt: 1,
           },
         }
@@ -210,12 +200,18 @@ export async function getHistoricalIpos(params: GetIposParams = {}): Promise<Get
   const rawHistoricalApps = allRawApps.map((app: any) => ({
     id: app.id,
     ipoId: app.ipoId,
+    ipoName: app.ipoName,
+    memberId: app.memberId,
+    applicantName: app.applicantName,
+    applicantUsername: app.applicantUsername,
     numberOfPanCards: app.numberOfPanCards,
     panNumbers: app.panNumbers,
     totalContribution: app.totalContribution,
     status: app.status,
     allotmentStatus: app.allotmentStatus,
     allottedIndices: app.allottedIndices,
+    fundingStructure: app.fundingStructure,
+    contributors: app.contributors,
     createdAt: app.createdAt,
   }));
 

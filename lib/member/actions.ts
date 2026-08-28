@@ -23,6 +23,7 @@ import {
 } from "@/lib/calculations";
 import { generateEntityId } from "@/lib/utils";
 import { Filter } from "mongodb";
+import { verifyAdminSession } from "@/lib/auth/session";
 
 export interface GetMembersParams {
   query?: string;
@@ -39,20 +40,6 @@ export interface GetMembersResponse {
   totalPages: number;
   metrics: MemberRosterMetrics;
   currentUserUsername: string;
-}
-
-async function verifyAdminSession(): Promise<string> {
-  const cookieStore = await cookies();
-  const sessionCookie = cookieStore.get("orbit_session");
-  if (!sessionCookie) {
-    throw new Error("Unauthorized: Admin session required.");
-  }
-  try {
-    const parsed = JSON.parse(sessionCookie.value);
-    return parsed.user || "Admin";
-  } catch {
-    throw new Error("Unauthorized: Invalid session.");
-  }
 }
 
 function sanitizeUsername(raw: string): string {

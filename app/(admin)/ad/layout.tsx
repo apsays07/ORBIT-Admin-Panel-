@@ -1,31 +1,28 @@
 import React from "react";
-import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { AdminSidebar } from "@/components/layout/admin-sidebar";
 import { AdminHeader } from "@/components/layout/admin-header";
 import { NavigationProgressBar } from "@/components/layout/nav-progress-bar";
 import { getDatabaseConnectionStatus } from "@/lib/db/mongodb";
+import { validateSession } from "@/lib/auth/session";
+
+export const dynamic = "force-dynamic";
 
 export default async function AdminLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
-  const cookieStore = await cookies();
-  const sessionCookie = cookieStore.get("orbit_session");
+  const sessionResult = await validateSession();
 
-  let userEmail = "ankitgod";
-  if (!sessionCookie) {
-    redirect("/ad/login");
-  } else {
-    try {
-      const parsed = JSON.parse(sessionCookie.value);
-      userEmail = parsed.user || userEmail;
-    } catch {
-      redirect("/ad/login");
+  if (!sessionResult.authenticated || !sessionResult.user) {
+    if (sessionResult.reason === "EXPIRED") {
+      redirect("/ad/login?reason=expired");
     }
+    redirect("/ad/login");
   }
 
+  const userEmail = sessionResult.user;
   const dbStatus = await getDatabaseConnectionStatus();
 
   return (

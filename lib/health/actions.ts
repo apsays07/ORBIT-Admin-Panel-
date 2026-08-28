@@ -15,20 +15,7 @@ import { NexoIPORecord, ProfitDistribution } from "@/types/ipo";
 import { SessionRecord } from "@/types/security";
 import { logAuditEvent } from "@/lib/audit/actions";
 import { isValidPan } from "@/lib/utils";
-
-async function verifyAdminSession(): Promise<string> {
-  const cookieStore = await cookies();
-  const sessionCookie = cookieStore.get("orbit_session");
-  if (!sessionCookie) {
-    throw new Error("Unauthorized: Admin session required.");
-  }
-  try {
-    const parsed = JSON.parse(sessionCookie.value);
-    return parsed.user || "Admin";
-  } catch {
-    throw new Error("Unauthorized: Invalid session.");
-  }
-}
+import { verifyAdminSession } from "@/lib/auth/session";
 
 /**
  * Conduct comprehensive database health inspection and referential integrity audit

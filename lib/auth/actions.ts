@@ -1,6 +1,12 @@
 "use server";
 
-import { cookies } from "next/headers";
+import {
+  createSession,
+  validateSession,
+  destroySession,
+  verifyAdminSession,
+  SessionValidationResult,
+} from "./session";
 
 export interface LoginResult {
   success: boolean;
@@ -15,6 +21,9 @@ export async function loginAdmin(
   try {
     const identifier = (formData.get("identifier") || formData.get("email") as string)?.toString().trim();
     const password = (formData.get("password") as string)?.trim();
+    const rememberMeRaw = formData.get("rememberMe");
+    const rememberMe = rememberMeRaw === "on" || rememberMeRaw === "true" || rememberMeRaw === "1";
+    const requestedRedirect = (formData.get("redirect") as string)?.trim();
 
     if (!identifier || !password) {
       return {
@@ -41,21 +50,23 @@ export async function loginAdmin(
       };
     }
 
-    // Set secure HTTP-only session cookie
-    const cookieStore = await cookies();
-    cookieStore.set("orbit_session", JSON.stringify({ user: identifier, authenticatedAt: Date.now() }), {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
-      sameSite: "lax",
-      path: "/",
-      maxAge: 60 * 60 * 24 * 7, // 7 days
+    // Create session in MongoDB and set secure cookie
+    await createSession({
+      userId: identifier,
+      role: "SUPER_ADMIN",
+      rememberMe,
     });
+
+    const redirectUrl = requestedRedirect && requestedRedirect.startsWith("/")
+      ? requestedRedirect
+      : "/ad/ipo";
 
     return {
       success: true,
-      redirectUrl: "/ad/ipo",
+      redirectUrl,
     };
   } catch (e) {
+    console.error("[loginAdmin] Error during authentication:", e);
     return {
       success: false,
       error: "Unable to sign in right now. Please try again.",
@@ -63,19 +74,18 @@ export async function loginAdmin(
   }
 }
 
-export async function logoutAdmin(): Promise<void> {
-  const cookieStore = await cookies();
-  cookieStore.delete("orbit_session");
-}
-
-export async function verifyAdminSession(): Promise<string> {
+export async function logoutAdmin(): Promise<{ success: boolean }> {
   try {
-    const cookieStore = await cookies();
-    const session = cookieStore.get("orbit_session");
-    if (!session?.value) return "ankitgod";
-    const data = JSON.parse(session.value);
-    return data.user || "ankitgod";
-  } catch {
-    return "ankitgod";
+    await destroySession();
+    return { success: true };
+  } catch (err) {
+    console.error("[logoutAdmin] Error during logout:", err);
+    return { success: false };
   }
 }
+
+export async function checkSessionStatus(): Promise<SessionValidationResult> {
+  return validateSession();
+}
+
+export { verifyAdminSession, validateSession, destroySession };

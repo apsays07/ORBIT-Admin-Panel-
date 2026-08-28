@@ -6,6 +6,8 @@ import { getDatabase } from "@/lib/db/mongodb";
 import { ApplicationRecord, MemberRecord } from "@/types/application";
 import { NexoIPORecord } from "@/types/ipo";
 import { Filter } from "mongodb";
+import { verifyAdminSession } from "@/lib/auth/session";
+import { syncIpoProfitDistribution } from "@/lib/profit/sync";
 
 export interface AllotmentIpoOption {
   id: string;
@@ -44,20 +46,6 @@ export interface GetAllotmentResponse {
   page: number;
   totalPages: number;
   limit: number;
-}
-
-async function verifyAdminSession(): Promise<string> {
-  const cookieStore = await cookies();
-  const sessionCookie = cookieStore.get("orbit_session");
-  if (!sessionCookie) {
-    throw new Error("Unauthorized: Admin session required.");
-  }
-  try {
-    const parsed = JSON.parse(sessionCookie.value);
-    return parsed.user || "Admin";
-  } catch {
-    throw new Error("Unauthorized: Invalid session.");
-  }
 }
 
 import { AllotmentService } from "@/lib/services/allotment.service";
@@ -183,10 +171,7 @@ export async function processAllotmentUpdate(
       }
     );
 
-    revalidatePath("/ad/allotment");
-    revalidatePath("/ad/applications");
-    revalidatePath("/ad/ipo");
-    revalidatePath("/ad/ipo/history");
+    await syncIpoProfitDistribution(ipoId, db);
 
     return { success: true };
   } catch (err: unknown) {
@@ -230,10 +215,7 @@ export async function resetAllotmentForIpo(ipoId: string): Promise<MutationResul
       }
     );
 
-    revalidatePath("/ad/allotment");
-    revalidatePath("/ad/applications");
-    revalidatePath("/ad/ipo");
-    revalidatePath("/ad/ipo/history");
+    await syncIpoProfitDistribution(ipoId, db);
 
     return { success: true };
   } catch (err: unknown) {

@@ -1,18 +1,11 @@
-import React from "react";
-import type { Metadata } from "next";
-import { LoginForm } from "@/components/auth/login-form";
-import { getDatabaseConnectionStatus } from "@/lib/db/mongodb";
-
-export const metadata: Metadata = {
-  title: "Login",
-};
+import { redirect } from "next/navigation";
+import { validateSession } from "@/lib/auth/session";
 
 export default async function HomePage() {
-  const dbStatus = await getDatabaseConnectionStatus();
-
-  return (
-    <main className="min-h-screen w-full bg-zinc-950 flex flex-col">
-      <LoginForm dbStatus={dbStatus} />
-    </main>
-  );
+  const sessionResult = await validateSession();
+  if (sessionResult.authenticated) {
+    redirect("/ad/ipo");
+  } else {
+    redirect("/ad/login");
+  }
 }

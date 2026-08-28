@@ -77,6 +77,12 @@ export function AdminHeader({ userEmail = "Ankit" }: AdminHeaderProps) {
             </div>
           </button>
 
+          {/* Subtle Session Active Status */}
+          <div className="hidden md:flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-zinc-900/90 border border-zinc-800 text-[11px] text-zinc-400 font-mono shadow-2xs">
+            <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
+            <span className="text-zinc-300">Session Active</span>
+          </div>
+
           {/* Interactive Notifications Center */}
           <NotificationsPopover />
 

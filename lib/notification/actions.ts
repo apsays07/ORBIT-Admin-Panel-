@@ -11,20 +11,7 @@ import {
 import { MemberData } from "@/types/member";
 import { generateEntityId } from "@/lib/utils";
 import { logAuditEvent } from "@/lib/audit/actions";
-
-async function verifyAdminSession(): Promise<string> {
-  const cookieStore = await cookies();
-  const sessionCookie = cookieStore.get("orbit_session");
-  if (!sessionCookie) {
-    throw new Error("Unauthorized: Admin session required.");
-  }
-  try {
-    const parsed = JSON.parse(sessionCookie.value);
-    return parsed.user || "Admin";
-  } catch {
-    throw new Error("Unauthorized: Invalid session.");
-  }
-}
+import { verifyAdminSession } from "@/lib/auth/session";
 
 /**
  * Fetch all notifications ordered by creation date
