@@ -409,7 +409,6 @@ export function CreateMemberModal({
                     placeholder="e.g. rohit_sharma"
                     disabled={isSubmitting}
                     className="h-9 pl-7 bg-zinc-900 border-zinc-800 text-xs font-mono text-zinc-100 rounded-md focus-visible:ring-zinc-700"
-                    autoFocus
                   />
                 </div>
               </div>

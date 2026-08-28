@@ -27,35 +27,52 @@ export function useModalKeyboardShortcuts({
   disableEnterConfirm = false,
 }: ModalKeyboardOptions) {
   const previousActiveElementRef = useRef<HTMLElement | null>(null);
+  const hasFocusedRef = useRef(false);
+
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
+
+  const onConfirmRef = useRef(onConfirm);
+  onConfirmRef.current = onConfirm;
+
+  const isSubmittingRef = useRef(isSubmitting);
+  isSubmittingRef.current = isSubmitting;
 
   useEffect(() => {
-    if (!isOpen) return;
+    if (!isOpen) {
+      hasFocusedRef.current = false;
+      return;
+    }
 
     // Save previous active element to restore focus upon close
-    if (typeof document !== "undefined" && document.activeElement instanceof HTMLElement) {
+    if (typeof document !== "undefined" && document.activeElement instanceof HTMLElement && !previousActiveElementRef.current) {
       previousActiveElementRef.current = document.activeElement;
     }
 
-    // Auto-focus designated input or first interactive element
-    const focusTimer = setTimeout(() => {
-      if (initialFocusRef?.current) {
-        initialFocusRef.current.focus();
-      }
-    }, 50);
+    // Auto-focus designated input ONLY ONCE when modal is opened
+    let focusTimer: NodeJS.Timeout | undefined;
+    if (!hasFocusedRef.current) {
+      hasFocusedRef.current = true;
+      focusTimer = setTimeout(() => {
+        if (initialFocusRef?.current) {
+          initialFocusRef.current.focus();
+        }
+      }, 50);
+    }
 
     function handleKeyDown(e: KeyboardEvent) {
       // 1. ESC KEY -> Dismiss/Close
       if (e.key === "Escape" || e.key === "Esc") {
-        if (!isSubmitting) {
+        if (!isSubmittingRef.current) {
           e.preventDefault();
           e.stopPropagation();
-          onClose();
+          onCloseRef.current();
         }
         return;
       }
 
       // 2. ENTER KEY -> Primary confirmation if not handled by a native form
-      if (e.key === "Enter" && onConfirm && !disableEnterConfirm) {
+      if (e.key === "Enter" && onConfirmRef.current && !disableEnterConfirm) {
         const target = e.target as HTMLElement | null;
         const isTextarea = target?.tagName === "TEXTAREA" || target?.isContentEditable;
 
@@ -69,9 +86,9 @@ export function useModalKeyboardShortcuts({
           return;
         }
 
-        if (!isSubmitting) {
+        if (!isSubmittingRef.current) {
           e.preventDefault();
-          onConfirm();
+          onConfirmRef.current();
         }
       }
     }
@@ -79,19 +96,20 @@ export function useModalKeyboardShortcuts({
     window.addEventListener("keydown", handleKeyDown, true);
 
     return () => {
-      clearTimeout(focusTimer);
+      if (focusTimer) clearTimeout(focusTimer);
       window.removeEventListener("keydown", handleKeyDown, true);
 
       // Restore focus
-      if (previousActiveElementRef.current && typeof previousActiveElementRef.current.focus === "function") {
+      if (!isOpen && previousActiveElementRef.current && typeof previousActiveElementRef.current.focus === "function") {
         try {
           previousActiveElementRef.current.focus();
         } catch {
           // Ignore if unmounted
         }
+        previousActiveElementRef.current = null;
       }
     };
-  }, [isOpen, onClose, onConfirm, isSubmitting, initialFocusRef, disableEnterConfirm]);
+  }, [isOpen, initialFocusRef, disableEnterConfirm]);
 }
 
 import { useState } from "react";
