@@ -37,6 +37,7 @@ export function LoginForm({ dbStatus, initialRedirect = "", initialReason = "" }
   const [showPassword, setShowPassword] = useState(false);
   const [rememberMe, setRememberMe] = useState(true);
   const [showForgotModal, setShowForgotModal] = useState(false);
+  const [isCapsLockOn, setIsCapsLockOn] = useState(false);
 
   const [state, formAction, isPending] = useActionState<LoginResult | null, FormData>(
     loginAdmin,
@@ -360,6 +361,12 @@ export function LoginForm({ dbStatus, initialRedirect = "", initialReason = "" }
                 className="text-xs font-medium text-zinc-300 flex items-center justify-between"
               >
                 <span>Password</span>
+                {isCapsLockOn && (
+                  <span className="text-[11px] text-amber-400 font-medium flex items-center gap-1 animate-in fade-in duration-150">
+                    <AlertCircle className="h-3 w-3 shrink-0" />
+                    Caps Lock is ON
+                  </span>
+                )}
               </label>
               <div className="relative">
                 <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-zinc-500">
@@ -370,19 +377,33 @@ export function LoginForm({ dbStatus, initialRedirect = "", initialReason = "" }
                   name="password"
                   type={showPassword ? "text" : "password"}
                   autoComplete="current-password"
+                  autoCapitalize="none"
+                  autoCorrect="off"
+                  spellCheck={false}
                   required
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.getModifierState) {
+                      setIsCapsLockOn(e.getModifierState("CapsLock"));
+                    }
+                  }}
+                  onKeyUp={(e) => {
+                    if (e.getModifierState) {
+                      setIsCapsLockOn(e.getModifierState("CapsLock"));
+                    }
+                  }}
                   placeholder="Enter your password"
                   disabled={isPending}
-                  className="w-full h-11 pl-10 pr-10 bg-zinc-900/90 hover:bg-zinc-900 border border-zinc-800 hover:border-zinc-700/80 text-sm text-zinc-100 placeholder:text-zinc-500 rounded-xl focus:outline-hidden focus:border-blue-500/80 focus:ring-1 focus:ring-blue-500/40 disabled:opacity-50 transition-colors"
+                  className="w-full h-11 pl-10 pr-10 bg-zinc-900/90 hover:bg-zinc-900 border border-zinc-800 hover:border-zinc-700/80 text-sm text-zinc-100 placeholder:text-zinc-500 rounded-xl focus:outline-hidden focus:border-blue-500/80 focus:ring-1 focus:ring-blue-500/40 disabled:opacity-50 transition-colors font-sans"
                 />
                 <button
                   type="button"
                   onClick={() => setShowPassword(!showPassword)}
+                  onMouseDown={(e) => e.preventDefault()}
                   aria-label={showPassword ? "Hide password" : "Show password"}
                   title={showPassword ? "Hide password" : "Show password"}
-                  tabIndex={0}
+                  tabIndex={-1}
                   className="absolute inset-y-0 right-0 pr-3.5 flex items-center text-zinc-500 hover:text-zinc-300 focus:outline-hidden transition-colors cursor-pointer"
                 >
                   {showPassword ? (

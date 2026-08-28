@@ -384,6 +384,9 @@ export function CreateMemberModal({
                     type={showPassword ? "text" : "password"}
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
+                    autoCapitalize="none"
+                    autoCorrect="off"
+                    spellCheck={false}
                     placeholder="Enter password (min 6 chars)"
                     disabled={isSubmitting}
                     className="h-9 pr-9 bg-zinc-900 border-zinc-800 text-xs font-mono text-zinc-100 rounded-md focus-visible:ring-zinc-700"
@@ -391,6 +394,9 @@ export function CreateMemberModal({
                   <button
                     type="button"
                     onClick={() => setShowPassword(!showPassword)}
+                    onMouseDown={(e) => e.preventDefault()}
+                    tabIndex={-1}
+                    aria-label={showPassword ? "Hide password" : "Show password"}
                     className="absolute right-2.5 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-zinc-200 transition-colors cursor-pointer"
                   >
                     {showPassword ? (

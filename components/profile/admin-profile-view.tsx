@@ -155,6 +155,9 @@ export function AdminProfileView({ initialData }: { initialData: AdminProfileDat
                   type={showCurrent ? "text" : "password"}
                   value={currentPass}
                   onChange={(e) => setCurrentPass(e.target.value)}
+                  autoCapitalize="none"
+                  autoCorrect="off"
+                  spellCheck={false}
                   required
                   placeholder="Enter current password"
                   className="w-full h-9 px-3 pr-9 rounded-xl bg-zinc-950 border border-zinc-800 text-xs text-zinc-100 placeholder:text-zinc-600 focus:outline-none focus:border-blue-500/60 transition-colors"
@@ -162,7 +165,10 @@ export function AdminProfileView({ initialData }: { initialData: AdminProfileDat
                 <button
                   type="button"
                   onClick={() => setShowCurrent((v) => !v)}
-                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-zinc-500 hover:text-zinc-300 transition-colors"
+                  onMouseDown={(e) => e.preventDefault()}
+                  tabIndex={-1}
+                  aria-label={showCurrent ? "Hide password" : "Show password"}
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-zinc-500 hover:text-zinc-300 transition-colors cursor-pointer"
                 >
                   {showCurrent ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
                 </button>
@@ -179,6 +185,9 @@ export function AdminProfileView({ initialData }: { initialData: AdminProfileDat
                   type={showNew ? "text" : "password"}
                   value={newPass}
                   onChange={(e) => setNewPass(e.target.value)}
+                  autoCapitalize="none"
+                  autoCorrect="off"
+                  spellCheck={false}
                   required
                   placeholder="Min. 6 characters"
                   className="w-full h-9 px-3 pr-9 rounded-xl bg-zinc-950 border border-zinc-800 text-xs text-zinc-100 placeholder:text-zinc-600 focus:outline-none focus:border-blue-500/60 transition-colors"
@@ -186,7 +195,10 @@ export function AdminProfileView({ initialData }: { initialData: AdminProfileDat
                 <button
                   type="button"
                   onClick={() => setShowNew((v) => !v)}
-                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-zinc-500 hover:text-zinc-300 transition-colors"
+                  onMouseDown={(e) => e.preventDefault()}
+                  tabIndex={-1}
+                  aria-label={showNew ? "Hide password" : "Show password"}
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-zinc-500 hover:text-zinc-300 transition-colors cursor-pointer"
                 >
                   {showNew ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
                 </button>
@@ -203,6 +215,9 @@ export function AdminProfileView({ initialData }: { initialData: AdminProfileDat
                   type={showConfirm ? "text" : "password"}
                   value={confirmPass}
                   onChange={(e) => setConfirmPass(e.target.value)}
+                  autoCapitalize="none"
+                  autoCorrect="off"
+                  spellCheck={false}
                   required
                   placeholder="Re-enter new password"
                   className="w-full h-9 px-3 pr-9 rounded-xl bg-zinc-950 border border-zinc-800 text-xs text-zinc-100 placeholder:text-zinc-600 focus:outline-none focus:border-blue-500/60 transition-colors"
@@ -210,7 +225,10 @@ export function AdminProfileView({ initialData }: { initialData: AdminProfileDat
                 <button
                   type="button"
                   onClick={() => setShowConfirm((v) => !v)}
-                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-zinc-500 hover:text-zinc-300 transition-colors"
+                  onMouseDown={(e) => e.preventDefault()}
+                  tabIndex={-1}
+                  aria-label={showConfirm ? "Hide password" : "Show password"}
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-zinc-500 hover:text-zinc-300 transition-colors cursor-pointer"
                 >
                   {showConfirm ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
                 </button>
