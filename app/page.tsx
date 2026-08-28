@@ -11,7 +11,7 @@ export default async function HomePage() {
   const dbStatus = await getDatabaseConnectionStatus();
 
   return (
-    <main className="flex min-h-screen flex-col items-center justify-center p-6 bg-gradient-to-b from-zinc-50 to-zinc-100 dark:from-zinc-950 dark:to-zinc-900">
+    <main className="min-h-screen w-full bg-zinc-950 flex flex-col">
       <LoginForm dbStatus={dbStatus} />
     </main>
   );
