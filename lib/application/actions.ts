@@ -16,6 +16,7 @@ import { isValidPan, formatCombinedApplicants, generateEntityId } from "@/lib/ut
 import { Filter } from "mongodb";
 import { verifyAdminSession } from "@/lib/auth/session";
 import { syncIpoProfitDistribution } from "@/lib/profit/sync";
+import { syncIpoMetrics, syncMemberMetrics } from "@/lib/db/sync-counts";
 
 export interface IpoOption {
   id: string;
@@ -336,8 +337,10 @@ export async function createSoloApplicationsBatch(
       },
     });
 
-    // 8. Synchronize profit distribution & revalidate all dependent routes
+    // 8. Synchronize profit distribution & database counts
     await syncIpoProfitDistribution(ipo.id, db);
+    await syncIpoMetrics(ipo.id, db);
+    await syncMemberMetrics(memberIds, db);
 
     console.info(`[ORBIT][CREATE_SOLO_APPS] Created ${createdDocs.length} solo applications for ${ipo.name} by ${adminUser}`);
 
@@ -499,6 +502,8 @@ export async function createMultiFriendApplication(
     });
 
     await syncIpoProfitDistribution(ipo.id, db);
+    await syncIpoMetrics(ipo.id, db);
+    await syncMemberMetrics(allMemberIds, db);
 
     return {
       success: true,
@@ -705,8 +710,10 @@ export async function createMultiFriendApplicationsBatch(
       },
     });
 
-    // 8. Synchronize profit distribution & revalidate routes
+    // 8. Synchronize profit distribution & database counts
     await syncIpoProfitDistribution(ipo.id, db);
+    await syncIpoMetrics(ipo.id, db);
+    await syncMemberMetrics(Array.from(allMemberIds), db);
 
     console.info(
       `[ORBIT][CREATE_MULTI_FRIEND_BATCH] Created ${createdDocs.length} multi-friend applications for ${ipo.name} by ${adminUser}`
@@ -879,11 +886,14 @@ export async function updateApplication(
       },
     });
 
-    // Synchronize profit distribution for previous and updated IPO
+    // Synchronize profit distribution & database counts for previous and updated IPO
     if (existing.ipoId && existing.ipoId !== ipoId) {
       await syncIpoProfitDistribution(existing.ipoId, db);
+      await syncIpoMetrics(existing.ipoId, db);
     }
     await syncIpoProfitDistribution(ipoId, db);
+    await syncIpoMetrics(ipoId, db);
+    await syncMemberMetrics([member.id, existing.memberId], db);
 
     console.info(`[ORBIT][UPDATE_APP] Application ${id} updated by ${adminUser}`);
 
@@ -1041,9 +1051,12 @@ export async function bulkDeleteApplications(
       metadata: { ids, deletedCount: result.deletedCount },
     });
 
+    const affectedMemberIds = Array.from(new Set(toDeleteApps.map((a) => a.memberId).filter(Boolean)));
     for (const ipoId of affectedIpoIds) {
       await syncIpoProfitDistribution(ipoId, db);
+      await syncIpoMetrics(ipoId, db);
     }
+    await syncMemberMetrics(affectedMemberIds, db);
 
     return { success: true, count: result.deletedCount };
   } catch (err: unknown) {
@@ -1093,6 +1106,10 @@ export async function deleteApplication(id: string): Promise<{ success: boolean;
 
     if (existing.ipoId) {
       await syncIpoProfitDistribution(existing.ipoId, db);
+      await syncIpoMetrics(existing.ipoId, db);
+    }
+    if (existing.memberId) {
+      await syncMemberMetrics([existing.memberId], db);
     }
 
     console.info(`[ORBIT][DELETE_APP] Application ${id} deleted by ${adminUser}`);
@@ -1154,6 +1171,10 @@ export async function restoreApplication(
 
     if (record.ipoId) {
       await syncIpoProfitDistribution(record.ipoId, db);
+      await syncIpoMetrics(record.ipoId, db);
+    }
+    if (record.memberId) {
+      await syncMemberMetrics([record.memberId], db);
     }
 
     console.info(`[ORBIT][RESTORE_APP] Application ${record.id} restored by ${adminUser}`);

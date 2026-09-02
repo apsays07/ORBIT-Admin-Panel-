@@ -34,6 +34,10 @@ import {
   ControlCenterSeverity,
   ApplicationLifecycleStatus,
   IssueStatusOverrideRecord,
+  TodayIpoSummary,
+  IpoIntelligenceInsight,
+  MissingPanRecord,
+  IpoIntelligencePriority,
 } from "@/types/control-center";
 import {
   normalizePan,
@@ -648,6 +652,13 @@ export function analyzeControlCenterData({
   // E. Missing PAN in application
   for (const app of targetApplications) {
     const rawPanCount = app.numberOfPanCards || 1;
+    // CRITICAL: Exclude applications where any PAN starts with "XUSER" (placeholder)
+    const rawPans = Array.isArray(app.panNumbers) ? app.panNumbers : [];
+    const hasXuserPlaceholder = rawPans.some((p) => (p || "").trim().toUpperCase().startsWith("XUSER"));
+    if (hasXuserPlaceholder) {
+      continue; // Exclude placeholder XUSER PANs from alerts!
+    }
+
     const genuinePans = extractGenuinePans(app.panNumbers);
     if (genuinePans.length === 0 && app.status !== "CANCELLED") {
       addIssue({
@@ -771,6 +782,38 @@ export function analyzeControlCenterData({
     resolvedIssuesCount: resolvedIssues.length,
   };
 
+  // 6b. Missing PAN Records Engine (Strictly excluding XUSER placeholder PANs)
+  const missingPanRecords = extractMissingPanRecords({
+    allApplications,
+    statusOverrides,
+    selectedIpoId: targetIpoId,
+  });
+  const activeMissingPansCount = missingPanRecords.filter((r) => !r.isResolved).length;
+
+  // 7a. Today's IPO Summary Briefing
+  const todaySummary = generateTodayIpoSummary({
+    allIpos,
+    allApplications,
+    detectedIssues,
+    targetIpoId,
+  });
+
+  // 7b. Smart IPO Intelligence & Automated Alerts
+  const intelligenceInsights = generateIpoIntelligenceInsights({
+    allIpos,
+    allApplications,
+    profitDistributions,
+    detectedIssues,
+    missingPanRecords,
+    capitalReconciliation,
+    targetIpoId,
+  });
+
+  const criticalInsightsCount = intelligenceInsights.filter((i) => i.priority === "CRITICAL").length;
+  const highInsightsCount = intelligenceInsights.filter((i) => i.priority === "HIGH").length;
+  const mediumInsightsCount = intelligenceInsights.filter((i) => i.priority === "MEDIUM").length;
+  const infoInsightsCount = intelligenceInsights.filter((i) => i.priority === "INFO").length;
+
   const kpis: ControlCenterKPIs = {
     selectedIpoId: targetIpoId,
     selectedIpoName: targetIpoName,
@@ -778,6 +821,11 @@ export function analyzeControlCenterData({
     pendingActionsCount,
     capitalAtRisk: totalCapitalAtRisk,
     historicalPansNotApplied: gapResult.missingPansCount,
+    missingPansCount: activeMissingPansCount,
+    criticalInsightsCount,
+    highInsightsCount,
+    mediumInsightsCount,
+    infoInsightsCount,
     duplicateRecordsCount: duplicateApplicationsCount,
     capitalMismatchesCount: capitalDiscrepancies.length,
     lotMismatchesCount: lotDiscrepancies.length,
@@ -823,7 +871,408 @@ export function analyzeControlCenterData({
     availableIpos,
     selectedIpoId: targetIpoId,
     selectedIpoName: targetIpoName,
+    todaySummary,
+    intelligenceInsights,
+    missingPanRecords,
   };
+}
+
+/**
+ * Extract genuine missing, invalid, or partial PAN records from applications.
+ * CRITICAL RULE: Any application containing a PAN starting with "XUSER" is strictly excluded!
+ */
+export function extractMissingPanRecords({
+  allApplications = [],
+  statusOverrides = {},
+  selectedIpoId,
+}: {
+  allApplications: ApplicationRecord[];
+  statusOverrides?: Record<string, ControlCenterIssueStatus>;
+  selectedIpoId?: string | null;
+}): MissingPanRecord[] {
+  const panRegex = /^[A-Z]{5}[0-9]{4}[A-Z]{1}$/;
+  const records: MissingPanRecord[] = [];
+  let serialNumber = 1;
+
+  const candidateApps = selectedIpoId && selectedIpoId !== "ALL"
+    ? allApplications.filter((a) => a.ipoId === selectedIpoId)
+    : allApplications;
+
+  for (const app of candidateApps) {
+    if (app.status === "CANCELLED" || app.status === "REJECTED" || app.status === "DELETED") {
+      continue;
+    }
+
+    const rawPans = Array.isArray(app.panNumbers) ? app.panNumbers : [];
+
+    // CRITICAL FILTERING RULE:
+    // If ANY PAN on this application starts with "XUSER" (case-insensitive),
+    // it is a placeholder/system-generated PAN and MUST BE COMPLETELY EXCLUDED!
+    const hasXuserPlaceholder = rawPans.some((p) => (p || "").trim().toUpperCase().startsWith("XUSER"));
+    if (hasXuserPlaceholder) {
+      continue;
+    }
+
+    const declaredLots = Number(app.numberOfPanCards || 1);
+    const cleanPans = rawPans.map((p) => (p || "").trim().toUpperCase()).filter(Boolean);
+
+    let isMissing = false;
+    let statusType: "MISSING" | "INVALID_FORMAT" | "INCOMPLETE_LOTS" = "MISSING";
+    let statusLabel = "Missing PAN";
+    let actionRequired = "Attach valid 10-character PAN card records to this application.";
+
+    if (cleanPans.length === 0) {
+      isMissing = true;
+      statusType = "MISSING";
+      statusLabel = "Missing PAN";
+      actionRequired = "No PAN card attached. Add member PAN before registrar cutoff.";
+    } else {
+      const invalidPans = cleanPans.filter((p) => !panRegex.test(p));
+      if (invalidPans.length > 0) {
+        isMissing = true;
+        statusType = "INVALID_FORMAT";
+        statusLabel = "Invalid PAN Format";
+        actionRequired = `Invalid PAN format (${invalidPans[0]}). Must follow 5 letters, 4 digits, 1 letter format.`;
+      } else if (cleanPans.length < declaredLots) {
+        isMissing = true;
+        statusType = "INCOMPLETE_LOTS";
+        statusLabel = `Incomplete Lots (${cleanPans.length}/${declaredLots} provided)`;
+        actionRequired = `Application declared ${declaredLots} lot(s) but only provided ${cleanPans.length} PAN card(s). Add remaining PANs.`;
+      }
+    }
+
+    if (isMissing) {
+      const issueId = `issue_missing_pan_${app.id}`;
+      const isResolved = statusOverrides[issueId] === "RESOLVED" || statusOverrides[issueId] === "KNOWN_EXCEPTION";
+
+      records.push({
+        id: `missing_pan_${app.id}`,
+        applicationId: app.id,
+        serialNumber: serialNumber++,
+        memberName: app.applicantName || "Member",
+        memberUsername: app.applicantUsername,
+        memberId: app.memberId,
+        ipoId: app.ipoId,
+        ipoName: app.ipoName || "IPO Offering",
+        panStatus: statusType,
+        panStatusLabel: statusLabel,
+        currentPans: cleanPans,
+        dateAdded: app.createdAt || new Date().toISOString(),
+        appliedLots: declaredLots,
+        applicationStatus: app.status || "AWAITING",
+        actionRequired,
+        isResolved,
+      });
+    }
+  }
+
+  return records;
+}
+
+/**
+ * Generate Today's IPO Summary briefing.
+ */
+export function generateTodayIpoSummary({
+  allIpos = [],
+  allApplications = [],
+  detectedIssues = [],
+  targetIpoId,
+}: {
+  allIpos: NexoIPORecord[];
+  allApplications: ApplicationRecord[];
+  detectedIssues: ControlCenterIssue[];
+  targetIpoId?: string | null;
+}): TodayIpoSummary {
+  const activeIpos = allIpos.filter(
+    (i) =>
+      i.status === "APPLICATION_OPEN" ||
+      i.status === "OPEN" ||
+      i.status === "BID_OPEN" ||
+      i.status === "ACTIVE"
+  );
+  const activeIposCount = activeIpos.length;
+
+  const candidateApps = targetIpoId && targetIpoId !== "ALL"
+    ? allApplications.filter((a) => a.ipoId === targetIpoId)
+    : allApplications.filter((a) => {
+        const matchingIpo = allIpos.find((i) => i.id === a.ipoId);
+        return matchingIpo ? matchingIpo.status !== "COMPLETED" : true;
+      });
+
+  const validApps = candidateApps.filter(
+    (a) => a.status !== "CANCELLED" && a.status !== "REJECTED" && a.status !== "DELETED"
+  );
+
+  const managedApplicationsCount = validApps.length;
+  const appliedLotsCount = validApps.reduce(
+    (sum, a) => sum + Number(a.numberOfPanCards || a.panNumbers?.length || 1),
+    0
+  );
+
+  const blockedCapital = validApps.reduce(
+    (sum, a) => sum + Number(a.totalContribution || 0),
+    0
+  );
+
+  const urgentAttentionItemsCount = detectedIssues.filter(
+    (i) => (i.status === "OPEN" || i.status === "INVESTIGATING") && (i.severity === "CRITICAL" || i.severity === "HIGH")
+  ).length;
+
+  const lines: string[] = [
+    `Today, ${activeIposCount} ${activeIposCount === 1 ? "IPO is" : "IPOs are"} active.`,
+    `${managedApplicationsCount} ${managedApplicationsCount === 1 ? "application is" : "applications are"} currently being managed.`,
+    `${appliedLotsCount} ${appliedLotsCount === 1 ? "lot has" : "lots have"} been applied.`,
+    `₹${formatNumber(blockedCapital)} capital is currently blocked.`,
+    `${urgentAttentionItemsCount} important ${urgentAttentionItemsCount === 1 ? "action requires" : "actions require"} your attention today.`,
+  ];
+
+  return {
+    activeIposCount,
+    managedApplicationsCount,
+    appliedLotsCount,
+    blockedCapital,
+    urgentAttentionItemsCount,
+    summaryLines: lines,
+  };
+}
+
+/**
+ * Generate Smart IPO Intelligence Insights categorized by priority.
+ */
+export function generateIpoIntelligenceInsights({
+  allIpos = [],
+  allApplications = [],
+  profitDistributions = [],
+  detectedIssues = [],
+  missingPanRecords = [],
+  capitalReconciliation,
+  targetIpoId,
+}: {
+  allIpos: NexoIPORecord[];
+  allApplications: ApplicationRecord[];
+  profitDistributions: ProfitDistribution[];
+  detectedIssues: ControlCenterIssue[];
+  missingPanRecords: MissingPanRecord[];
+  capitalReconciliation?: CapitalReconciliationSummary;
+  targetIpoId?: string | null;
+}): IpoIntelligenceInsight[] {
+  const insights: IpoIntelligenceInsight[] = [];
+  const now = new Date();
+  const todayStr = now.toISOString().slice(0, 10);
+
+  const tomorrow = new Date(now.getTime() + 24 * 60 * 60 * 1000);
+  const tomorrowStr = tomorrow.toISOString().slice(0, 10);
+
+  const profitMap = new Map<string, ProfitDistribution>();
+  profitDistributions.forEach((p) => {
+    if (p.ipoId) profitMap.set(p.ipoId, p);
+  });
+
+  // 1. IPO Status Intelligence (Opening, Closing, Listing)
+  for (const ipo of allIpos) {
+    const closeDate = ipo.metrics?.closeDate ? ipo.metrics.closeDate.slice(0, 10) : null;
+    const openDate = ipo.metrics?.openDate ? ipo.metrics.openDate.slice(0, 10) : null;
+    const listingDate = ipo.metrics?.listingDate ? ipo.metrics.listingDate.slice(0, 10) : null;
+    const allotmentDate = ipo.metrics?.allotmentDate ? ipo.metrics.allotmentDate.slice(0, 10) : null;
+
+    const isOpen = ipo.status === "APPLICATION_OPEN" || ipo.status === "OPEN" || ipo.status === "ACTIVE";
+
+    // A. Closing Today -> 🔴 CRITICAL
+    if (isOpen && closeDate === todayStr) {
+      insights.push({
+        id: `insight_close_today_${ipo.id}`,
+        priority: "CRITICAL",
+        title: `${ipo.name} Closes Today`,
+        explanation: `Application window closes today (${todayStr}). Finalize mandate approvals and review submitted forms before cutoff.`,
+        ipoId: ipo.id,
+        ipoName: ipo.name,
+        category: "IPO_STATUS",
+        actionLabel: "Review Applications →",
+        actionType: "NAVIGATE",
+        actionTarget: `/ad/applications?ipoId=${ipo.id}`,
+        dateText: "Today",
+        iconName: "AlertTriangle",
+      });
+    }
+
+    // B. Closing Tomorrow -> 🟠 HIGH
+    if (isOpen && closeDate === tomorrowStr) {
+      insights.push({
+        id: `insight_close_tomorrow_${ipo.id}`,
+        priority: "HIGH",
+        title: `${ipo.name} Closes Tomorrow`,
+        explanation: `Application window closes tomorrow (${tomorrowStr}). Ensure member syndicate quotas are fully allocated.`,
+        ipoId: ipo.id,
+        ipoName: ipo.name,
+        category: "IPO_STATUS",
+        actionLabel: "Review Offering →",
+        actionType: "NAVIGATE",
+        actionTarget: `/ad/ipo`,
+        dateText: "Tomorrow",
+        iconName: "Clock",
+      });
+    }
+
+    // C. Opening Today -> 🟡 MEDIUM
+    if (openDate === todayStr) {
+      insights.push({
+        id: `insight_open_today_${ipo.id}`,
+        priority: "MEDIUM",
+        title: `${ipo.name} Bidding Opens Today`,
+        explanation: `Subscription window opens today. Syndicate members can begin submitting applications.`,
+        ipoId: ipo.id,
+        ipoName: ipo.name,
+        category: "IPO_STATUS",
+        actionLabel: "View Details →",
+        actionType: "NAVIGATE",
+        actionTarget: `/ad/ipo`,
+        dateText: "Today",
+        iconName: "Sparkles",
+      });
+    }
+
+    // D. Listing Today or Tomorrow -> 🟡 MEDIUM
+    if (listingDate === todayStr || listingDate === tomorrowStr) {
+      const when = listingDate === todayStr ? "Today" : "Tomorrow";
+      insights.push({
+        id: `insight_listing_${ipo.id}`,
+        priority: "MEDIUM",
+        title: `${ipo.name} Listing Scheduled for ${when}`,
+        explanation: `Shares will list on the exchange ${when.toLowerCase()} (${listingDate}). Prepare listing day settlement and profit calculation.`,
+        ipoId: ipo.id,
+        ipoName: ipo.name,
+        category: "IPO_STATUS",
+        actionLabel: "Track Listing →",
+        actionType: "NAVIGATE",
+        actionTarget: `/ad/ipo`,
+        dateText: when,
+        iconName: "TrendingUp",
+      });
+    }
+
+    // 2. Allotment Status Intelligence
+    const isAllotmentFinalized = Boolean(ipo.allotmentFinalized || ipo.status === "ALLOTMENT_OUT" || ipo.status === "COMPLETED");
+    if (!isAllotmentFinalized && closeDate && closeDate < todayStr) {
+      // Allotment overdue or pending registrar results -> 🔴 CRITICAL
+      insights.push({
+        id: `insight_allotment_pending_${ipo.id}`,
+        priority: "CRITICAL",
+        title: `Allotment Results Overdue for ${ipo.name}`,
+        explanation: `IPO closed on ${closeDate} but allotment decisions have not been marked in the dashboard.`,
+        ipoId: ipo.id,
+        ipoName: ipo.name,
+        category: "ALLOTMENT",
+        actionLabel: "Finalize Allotment →",
+        actionType: "NAVIGATE",
+        actionTarget: `/ad/allotment?ipoId=${ipo.id}`,
+        dateText: `Closed ${closeDate}`,
+        iconName: "Target",
+      });
+    } else if (!isAllotmentFinalized && allotmentDate && (allotmentDate === todayStr || allotmentDate === tomorrowStr)) {
+      // Allotment expected soon -> 🟠 HIGH
+      const when = allotmentDate === todayStr ? "today" : "tomorrow";
+      insights.push({
+        id: `insight_allotment_soon_${ipo.id}`,
+        priority: "HIGH",
+        title: `Allotment Results Expected ${when} for ${ipo.name}`,
+        explanation: `Registrar basis of allotment is scheduled for ${allotmentDate}. Be ready to enter allotment outcomes.`,
+        ipoId: ipo.id,
+        ipoName: ipo.name,
+        category: "ALLOTMENT",
+        actionLabel: "Open Allotment Center →",
+        actionType: "NAVIGATE",
+        actionTarget: `/ad/allotment?ipoId=${ipo.id}`,
+        dateText: allotmentDate === todayStr ? "Today" : "Tomorrow",
+        iconName: "Target",
+      });
+    }
+
+    // 3. Profit Distribution Intelligence
+    const isAllotted = ipo.status === "ALLOTMENT_OUT" || ipo.allotmentFinalized;
+    const profitDist = profitMap.get(ipo.id) || ipo.profitDistribution;
+    const isProfitPublished = Boolean(profitDist?.isPublished);
+
+    if (isAllotted && !isProfitPublished && ipo.status !== "CANCELLED") {
+      // Profit not published yet -> 🟠 HIGH
+      insights.push({
+        id: `insight_profit_pending_${ipo.id}`,
+        priority: "HIGH",
+        title: `Profit Distribution Pending for ${ipo.name}`,
+        explanation: `Allotment has been marked, but profit report has not been published to members.`,
+        ipoId: ipo.id,
+        ipoName: ipo.name,
+        category: "PROFIT",
+        actionLabel: "Publish Profit →",
+        actionType: "NAVIGATE",
+        actionTarget: `/ad/distribute-profit?ipoId=${ipo.id}`,
+        dateText: "Action Required",
+        iconName: "Coins",
+      });
+    } else if (isProfitPublished && profitDist) {
+      // Profit published recently -> 🔵 INFO
+      const pubDate = profitDist.publishedAt ? profitDist.publishedAt.slice(0, 10) : todayStr;
+      insights.push({
+        id: `insight_profit_published_${ipo.id}`,
+        priority: "INFO",
+        title: `Profit Published for ${ipo.name}`,
+        explanation: `Total ₹${formatNumber(Number(profitDist.totalProfit || 0))} profit published across ${profitDist.totalLots || 0} applied lots (₹${formatNumber(Number(profitDist.oneLotProfit || 0))}/lot).`,
+        ipoId: ipo.id,
+        ipoName: ipo.name,
+        category: "PROFIT",
+        actionLabel: "View Distribution →",
+        actionType: "NAVIGATE",
+        actionTarget: `/ad/distribute-profit?ipoId=${ipo.id}`,
+        dateText: pubDate,
+        iconName: "CheckCircle2",
+      });
+    }
+  }
+
+  // 4. Missing PAN Intelligence (Strictly Genuine, Excluding XUSER)
+  const activeMissingPans = missingPanRecords.filter((r) => !r.isResolved);
+  if (activeMissingPans.length > 0) {
+    const isCritical = activeMissingPans.length >= 5;
+    insights.push({
+      id: "insight_missing_pans_alert",
+      priority: isCritical ? "CRITICAL" : "HIGH",
+      title: `${activeMissingPans.length} Genuine PAN Card ${activeMissingPans.length === 1 ? "Record Requires" : "Records Require"} Attention`,
+      explanation: `${activeMissingPans.length} application filings contain missing or invalid PAN details. Placeholder XUSER PANs have been automatically excluded.`,
+      category: "PAN",
+      actionLabel: "Review Missing PANs →",
+      actionType: "MODAL",
+      actionTarget: "MISSING_PANS_MODAL",
+      dateText: `${activeMissingPans.length} Unresolved`,
+      iconName: "ShieldAlert",
+    });
+  }
+
+  // 5. Capital Reconciliations
+  if (capitalReconciliation && capitalReconciliation.totalDiscrepantRecordsCount > 0) {
+    insights.push({
+      id: "insight_capital_discrepancy",
+      priority: "CRITICAL",
+      title: `${capitalReconciliation.totalDiscrepantRecordsCount} Capital Discrepancies Detected`,
+      explanation: `Discrepancy delta of ₹${formatNumber(Math.abs(capitalReconciliation.netDiscrepancy))} detected between recorded deposits and application values.`,
+      category: "CAPITAL",
+      actionLabel: "Review Capital →",
+      actionType: "TAB",
+      actionTarget: "capital",
+      dateText: "Urgent",
+      iconName: "Coins",
+    });
+  }
+
+  // Sort insights: CRITICAL (0) -> HIGH (1) -> MEDIUM (2) -> INFO (3)
+  const priorityRank: Record<IpoIntelligencePriority, number> = {
+    CRITICAL: 0,
+    HIGH: 1,
+    MEDIUM: 2,
+    INFO: 3,
+  };
+
+  insights.sort((a, b) => priorityRank[a.priority] - priorityRank[b.priority]);
+
+  return insights;
 }
 
 /**

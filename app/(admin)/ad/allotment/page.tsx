@@ -39,7 +39,7 @@ export default async function AllotmentPage({ searchParams }: AllotmentPageProps
     query,
     sortField,
     page,
-    limit: 500,
+    limit: 50,
   });
 
   return (

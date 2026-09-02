@@ -78,7 +78,7 @@ export class AllotmentService {
 
     const startTime = Date.now();
     const repo = new AllotmentRepository(db);
-    const { skip, limit: safeLimit } = parsePaginationParams({ page, limit }, 500, 1000);
+    const { skip, limit: safeLimit } = parsePaginationParams({ page, limit }, 50, 500);
 
     const ipoStart = Date.now();
     const { ipoDocs, ipoCountsRaw } = await repo.getIposWithCounts();

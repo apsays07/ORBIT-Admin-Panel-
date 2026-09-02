@@ -449,16 +449,20 @@ test("Gap Detector - Filtering and Sorting", () => {
 });
 
 test("Dummy PAN Detection - isDummyXuserPan pattern matcher", () => {
-  // Matches: Starts with XUSER and ends with X
+  // Matches: Starts with XUSER (case-insensitive)
   assert.equal(isDummyXuserPan("XUSER2532X"), true);
   assert.equal(isDummyXuserPan("XUSER0808X"), true);
   assert.equal(isDummyXuserPan("xuser1234x"), true);
   assert.equal(isDummyXuserPan("  XUSER9999X  "), true);
   assert.equal(isDummyXuserPan("XUSER0000X"), true);
+  assert.equal(isDummyXuserPan("XUSER12345"), true);
+  assert.equal(isDummyXuserPan("XUSERANKIT"), true);
+  assert.equal(isDummyXuserPan("XUSER00001"), true);
+  assert.equal(isDummyXuserPan("xuser123"), true);
+  assert.equal(isDummyXuserPan("XUSER1234Y"), true);
 
   // Non-dummy / genuine PANs:
   assert.equal(isDummyXuserPan("ABCDE1234F"), false);
-  assert.equal(isDummyXuserPan("XUSER1234Y"), false); // does not end in X
   assert.equal(isDummyXuserPan("AUSER1234X"), false); // does not start with XUSER
   assert.equal(isDummyXuserPan(""), false);
   assert.equal(isDummyXuserPan(null), false);

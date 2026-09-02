@@ -120,13 +120,13 @@ export function isValidNormalizedPan(pan: string): boolean {
 }
 
 /**
- * Detect dummy / test PAN cards that match the XUSER pattern:
- * Starts with "XUSER" and ends with "X" (e.g. "XUSER2532X", "XUSER0808X", etc.).
+ * Detect placeholder / dummy PAN cards that start with "XUSER" (case-insensitive).
+ * E.g., "XUSER12345", "XUSERANKIT", "XUSER00001", "XUSER7845V", "xuser123".
  */
 export function isDummyXuserPan(pan?: string | null): boolean {
   if (!pan || typeof pan !== "string") return false;
   const clean = normalizePan(pan);
-  return clean.startsWith("XUSER") && clean.endsWith("X");
+  return clean.toUpperCase().startsWith("XUSER");
 }
 
 /**

@@ -20,12 +20,14 @@ interface ControlCenterKpiGridProps {
   kpis: ControlCenterKPIs;
   onSelectTab: (tab: "overview" | "issues" | "capital" | "lots" | "pan" | "timeline") => void;
   onExplainNumber: (metricKey: string) => void;
+  onOpenMissingPans?: () => void;
 }
 
 export function ControlCenterKpiGrid({
   kpis,
   onSelectTab,
   onExplainNumber,
+  onOpenMissingPans,
 }: ControlCenterKpiGridProps) {
   return (
     <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2.5">
@@ -116,7 +118,13 @@ export function ControlCenterKpiGrid({
 
       {/* 4. MISSING PANs */}
       <div
-        onClick={() => onSelectTab("pan")}
+        onClick={() => {
+          if (onOpenMissingPans) {
+            onOpenMissingPans();
+          } else {
+            onSelectTab("pan");
+          }
+        }}
         className="group relative p-3 rounded-xl bg-zinc-900/50 hover:bg-zinc-900/80 border border-zinc-800/80 hover:border-purple-500/40 shadow-2xs transition-all duration-150 cursor-pointer flex flex-col justify-between hover:-translate-y-0.5"
       >
         <div className="flex items-center justify-between text-zinc-400">
@@ -137,13 +145,18 @@ export function ControlCenterKpiGrid({
         </div>
         <div className="mt-2 flex items-baseline justify-between">
           <span className="text-xl font-bold font-mono text-purple-300 tracking-tight">
-            {kpis.historicalPansNotApplied}
+            {kpis.missingPansCount ?? kpis.historicalPansNotApplied ?? 0}
           </span>
-          <span className="text-[10px] text-purple-400/70 font-mono">PANs</span>
+          <span className="text-[10px] text-purple-400/70 font-mono">RECORDS</span>
         </div>
-        <span className="text-[10.5px] text-zinc-500 mt-1 block truncate">
-          Prior syndicate applicants
-        </span>
+        <div className="flex items-center justify-between mt-1 pt-1 border-t border-zinc-800/40">
+          <span className="text-[10.5px] text-zinc-500 truncate">
+            {(kpis.missingPansCount ?? 0) > 0 ? "Requires Attention" : "All PANs Verified"}
+          </span>
+          <span className="text-[10px] text-purple-400 group-hover:text-purple-300 font-mono font-medium flex items-center gap-0.5 transition-colors">
+            MISSING PANs →
+          </span>
+        </div>
       </div>
 
       {/* 5. DUPLICATES */}

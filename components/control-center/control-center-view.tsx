@@ -31,7 +31,12 @@ import {
   Member360Data,
   Application360Data,
   PanAuditTimelineItem,
+  MissingPanRecord,
+  ControlCenterKPIs,
 } from "@/types/control-center";
+import { TodayIpoSummaryCard } from "./today-ipo-summary-card";
+import { IpoIntelligencePanel } from "./ipo-intelligence-panel";
+import { MissingPanRecordsModal } from "./missing-pan-records-modal";
 import { ControlCenterKpiGrid } from "./control-center-kpi-grid";
 import { ReconciliationOverviewFlow } from "./reconciliation-overview-flow";
 import { NeedsAttentionPanel } from "./needs-attention-panel";
@@ -95,9 +100,16 @@ export function ControlCenterView({ initialData }: ControlCenterViewProps) {
   const [isPanTimelineOpen, setIsPanTimelineOpen] = useState(false);
   const [isLoadingPanTimeline, setIsLoadingPanTimeline] = useState(false);
 
+  // Missing PAN viewer state
+  const [missingPanRecords, setMissingPanRecords] = useState<MissingPanRecord[]>(initialData.missingPanRecords || []);
+  const [kpis, setKpis] = useState<ControlCenterKPIs>(initialData.kpis);
+  const [isMissingPanModalOpen, setIsMissingPanModalOpen] = useState(false);
+
   const [lastReconciledText, setLastReconciledText] = useState("Just now");
 
   useEffect(() => {
+    setMissingPanRecords(initialData.missingPanRecords || []);
+    setKpis(initialData.kpis);
     setLastReconciledText("Just now");
     const interval = setInterval(() => {
       setLastReconciledText("1m ago");
@@ -204,7 +216,8 @@ export function ControlCenterView({ initialData }: ControlCenterViewProps) {
   }
 
   const {
-    kpis,
+    todaySummary,
+    intelligenceInsights,
     impactSummary,
     capitalReconciliation,
     lotReconciliation,
@@ -278,14 +291,32 @@ export function ControlCenterView({ initialData }: ControlCenterViewProps) {
         </div>
       </header>
 
-      {/* 2. COMPACT 6-CARD KPI STRIP */}
+      {/* 2. TODAY'S IPO SUMMARY BANNER */}
+      {todaySummary && (
+        <TodayIpoSummaryCard
+          summary={todaySummary}
+          onOpenActionItems={() => setActiveTab("issues")}
+        />
+      )}
+
+      {/* 3. COMPACT 6-CARD KPI STRIP */}
       <ControlCenterKpiGrid
         kpis={kpis}
         onSelectTab={setActiveTab}
         onExplainNumber={handleOpenExplainNumber}
+        onOpenMissingPans={() => setIsMissingPanModalOpen(true)}
       />
 
-      {/* 3. RECONCILIATION OVERVIEW FLOW */}
+      {/* 4. SMART IPO INTELLIGENCE PANEL */}
+      {intelligenceInsights && intelligenceInsights.length > 0 && (
+        <IpoIntelligencePanel
+          insights={intelligenceInsights}
+          onOpenMissingPansModal={() => setIsMissingPanModalOpen(true)}
+          onSelectTab={(tabKey) => setActiveTab(tabKey as TabKey)}
+        />
+      )}
+
+      {/* 5. RECONCILIATION OVERVIEW FLOW */}
       <ReconciliationOverviewFlow
         kpis={kpis}
         capitalSummary={capitalReconciliation}
@@ -521,6 +552,37 @@ export function ControlCenterView({ initialData }: ControlCenterViewProps) {
         onClose={() => setIsPanTimelineOpen(false)}
         timelineData={panTimelineData}
         isLoading={isLoadingPanTimeline}
+      />
+
+      {/* G. Missing PAN Records Modal */}
+      <MissingPanRecordsModal
+        isOpen={isMissingPanModalOpen}
+        onClose={() => setIsMissingPanModalOpen(false)}
+        records={missingPanRecords}
+        availableIpos={availableIpos}
+        onViewApplication360={handleOpenApplication360}
+        onRecordResolved={(recordId) => {
+          setMissingPanRecords((prev) =>
+            prev.map((r) => (r.id === recordId ? { ...r, isResolved: true } : r))
+          );
+          setKpis((prev) => ({
+            ...prev,
+            missingPansCount: Math.max(0, (prev.missingPansCount ?? 1) - 1),
+          }));
+        }}
+        onPanUpdated={(appId, newPan) => {
+          setMissingPanRecords((prev) =>
+            prev.map((r) =>
+              r.applicationId === appId
+                ? { ...r, currentPans: [newPan], isResolved: true }
+                : r
+            )
+          );
+          setKpis((prev) => ({
+            ...prev,
+            missingPansCount: Math.max(0, (prev.missingPansCount ?? 1) - 1),
+          }));
+        }}
       />
     </div>
   );

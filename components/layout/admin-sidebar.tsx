@@ -25,7 +25,12 @@ import { useAuth } from "@/components/providers/auth-provider";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { MemberAvatar } from "@/components/ui/member-avatar";
-import { IpoModal } from "@/components/ipo/ipo-modal";
+import dynamic from "next/dynamic";
+
+const IpoModal = dynamic(
+  () => import("@/components/ipo/ipo-modal").then((m) => m.IpoModal),
+  { ssr: false }
+);
 
 interface AdminSidebarProps {
   userEmail?: string;
@@ -101,7 +106,7 @@ export function AdminSidebar({ userEmail = "ankitgod", dbStatus = "connected" }:
             <Link
               key={item.name}
               href={item.href}
-              prefetch={true}
+              prefetch={false}
               onMouseEnter={() => {
                 if (item.href && item.href !== "#") {
                   router.prefetch(item.href);

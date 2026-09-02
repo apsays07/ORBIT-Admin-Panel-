@@ -1,6 +1,15 @@
 import { Db, Filter } from "mongodb";
 import { ApplicationRecord } from "@/types/application";
 
+let _cachedIpoAppCounts: { _id: string; name: string; count: number }[] | null = null;
+let _lastIpoAppCountsFetch = 0;
+const IPO_APP_COUNTS_TTL_MS = 20000;
+
+export function invalidateIpoAppCountsCache() {
+  _cachedIpoAppCounts = null;
+  _lastIpoAppCountsFetch = 0;
+}
+
 export class ApplicationRepository {
   constructor(private db: Db) {}
 
@@ -13,7 +22,12 @@ export class ApplicationRepository {
   }
 
   async getIpoApplicationCounts() {
-    return this.collection
+    const now = Date.now();
+    if (_cachedIpoAppCounts && now - _lastIpoAppCountsFetch < IPO_APP_COUNTS_TTL_MS) {
+      return _cachedIpoAppCounts;
+    }
+
+    const res = await this.collection
       .aggregate<{ _id: string; name: string; count: number }>([
         {
           $group: {
@@ -25,6 +39,10 @@ export class ApplicationRepository {
       ])
       .maxTimeMS(8000)
       .toArray();
+
+    _cachedIpoAppCounts = res;
+    _lastIpoAppCountsFetch = now;
+    return res;
   }
 
   async findPaginatedApplications(
@@ -179,20 +197,24 @@ export class ApplicationRepository {
 
   async insertApplication(doc: ApplicationRecord): Promise<void> {
     await this.collection.insertOne(doc);
+    invalidateIpoAppCountsCache();
   }
 
   async updateApplication(id: string, updates: Partial<ApplicationRecord>): Promise<boolean> {
     const res = await this.collection.updateOne({ id }, { $set: updates });
+    invalidateIpoAppCountsCache();
     return res.matchedCount > 0;
   }
 
   async deleteApplication(id: string): Promise<boolean> {
     const res = await this.collection.deleteOne({ id });
+    invalidateIpoAppCountsCache();
     return res.deletedCount > 0;
   }
 
   async deleteApplications(ids: string[]): Promise<number> {
     const res = await this.collection.deleteMany({ id: { $in: ids } });
+    invalidateIpoAppCountsCache();
     return res.deletedCount;
   }
 

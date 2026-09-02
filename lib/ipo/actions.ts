@@ -282,7 +282,7 @@ export async function getHistoricalIpos(params: GetIposParams = {}): Promise<Get
       activeCount: analyticsData.kpis.totalIposApplied,
       upcomingCount: 0,
       closedCount: total,
-      totalApplications: analyticsData.kpis.totalProfit,
+      totalApplications: analyticsData.kpis.totalApplications,
       totalAppliedCount: analyticsData.kpis.totalApplications,
       totalAllottedCount: analyticsData.kpis.totalAllotted,
       totalIposApplied: analyticsData.kpis.totalIposApplied,

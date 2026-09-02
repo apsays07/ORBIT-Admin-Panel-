@@ -16,6 +16,7 @@ import {
   reconcileProfitDistribution,
 } from "@/lib/calculations";
 import { verifyAdminSession } from "@/lib/auth/session";
+import { triggerAllPathRevalidations } from "@/lib/profit/sync";
 
 export interface ProfitIpoOption {
   id: string;
@@ -171,6 +172,8 @@ export async function publishProfitDistribution(
     const nowIso = new Date().toISOString();
 
     const distributionPayload: ProfitDistribution = {
+      ipoId,
+      isPublished: true,
       totalProfit: realizedProfit,
       totalLots,
       allottedLots: allottedLots || totalLots,
@@ -186,6 +189,11 @@ export async function publishProfitDistribution(
       {
         $set: {
           ipoId,
+          isPublished: true,
+          totalProfit: realizedProfit,
+          totalLots,
+          allottedLots: allottedLots || totalLots,
+          oneLotProfit,
           actorMemberId: "mem_admin",
           actorUserId: "usr_mem_admin",
           memberPayouts,
@@ -193,6 +201,7 @@ export async function publishProfitDistribution(
           publishedAt: nowIso,
           publishedBy: adminUser,
           updatedAt: nowIso,
+          updatedBy: adminUser,
         },
         $setOnInsert: {
           createdAt: nowIso,
@@ -214,10 +223,7 @@ export async function publishProfitDistribution(
       }
     );
 
-    revalidatePath("/ad/profit");
-    revalidatePath("/ad/distribute-profit");
-    revalidatePath("/ad/ipo");
-    revalidatePath("/ad/ipo/history");
+    triggerAllPathRevalidations(ipoId);
 
     return {
       success: true,
@@ -230,3 +236,169 @@ export async function publishProfitDistribution(
     return { success: false, error: msg };
   }
 }
+
+export interface MemberPayoutEditInput {
+  memberId: string;
+  name: string;
+  username?: string;
+  pan?: string;
+  contribution: number;
+  lots: number;
+  profit: number;
+}
+
+export interface SaveProfitDistributionInput {
+  ipoId: string;
+  ipoName?: string;
+  totalProfit: number;
+  allottedLots: number;
+  perLotProfit?: number;
+  members: MemberPayoutEditInput[];
+}
+
+export interface SaveProfitDistributionResult {
+  success: boolean;
+  error?: string;
+  totalProfit?: number;
+  oneLotProfit?: number;
+  memberCount?: number;
+}
+
+export async function saveProfitDistributionDetails(
+  input: SaveProfitDistributionInput
+): Promise<SaveProfitDistributionResult> {
+  try {
+    const adminUser = await verifyAdminSession();
+    const db = await getDatabase();
+    if (!db) return { success: false, error: "Database unavailable." };
+
+    const { ipoId, ipoName, totalProfit, allottedLots, perLotProfit, members } = input;
+    if (!ipoId) return { success: false, error: "IPO ID is required." };
+
+    const ipo = await db.collection<NexoIPORecord>("ipos").findOne({ id: ipoId });
+    if (!ipo) return { success: false, error: "IPO offering not found." };
+
+    const nowIso = new Date().toISOString();
+
+    // 1. If IPO Name changed, update in ipos collection
+    if (ipoName && ipoName.trim() && ipoName.trim() !== ipo.name) {
+      await db.collection("ipos").updateOne(
+        { id: ipoId },
+        {
+          $set: {
+            name: ipoName.trim(),
+            updatedAt: nowIso,
+          },
+        }
+      );
+    }
+
+    // 2. Compute totalLots and member payouts
+    let totalLots = 0;
+    const memberPayouts: MemberPayout[] = [];
+
+    for (const m of members) {
+      const lots = normalizeNumeric(m.lots, 0);
+      const profit = normalizeNumeric(m.profit, 0);
+      totalLots = safeAdd(totalLots, lots);
+
+      const rawUser = m.username || m.name;
+      const formattedUser = rawUser.startsWith("@") ? rawUser : `@${rawUser}`;
+
+      memberPayouts.push({
+        memberId: m.memberId,
+        name: formattedUser,
+        pan: m.pan || "—",
+        contribution: normalizeNumeric(m.contribution, 0),
+        lots,
+        profit,
+      });
+
+      // Synchronize username back to member record if clean name is provided
+      if (m.memberId && m.username) {
+        const cleanUser = m.username.replace(/^@/, "").trim();
+        if (cleanUser) {
+          await db.collection("members").updateOne(
+            { id: m.memberId },
+            { $set: { username: cleanUser, updatedAt: nowIso } }
+          );
+        }
+      }
+    }
+
+    const effectiveAllottedLots = allottedLots > 0 ? allottedLots : totalLots;
+    const oneLotProfit = normalizeNumeric(
+      perLotProfit,
+      totalLots > 0 ? calculatePerLotProfit(totalProfit, totalLots) : 0
+    );
+
+    const existingDistDoc = await db.collection("profit_distributions").findOne({ ipoId });
+    const publishedAt = existingDistDoc?.publishedAt || ipo.profitDistribution?.publishedAt || nowIso;
+    const publishedBy = existingDistDoc?.publishedBy || ipo.profitDistribution?.publishedBy || adminUser;
+
+    const distributionPayload: ProfitDistribution = {
+      ipoId,
+      isPublished: true,
+      totalProfit,
+      totalLots,
+      allottedLots: effectiveAllottedLots,
+      oneLotProfit,
+      publishedAt,
+      publishedBy,
+      memberPayouts,
+    };
+
+    // 3. Upsert profit_distributions collection
+    await db.collection("profit_distributions").updateOne(
+      { ipoId },
+      {
+        $set: {
+          ipoId,
+          isPublished: true,
+          totalProfit,
+          totalLots,
+          allottedLots: effectiveAllottedLots,
+          oneLotProfit,
+          actorMemberId: "mem_admin",
+          actorUserId: "usr_mem_admin",
+          memberPayouts,
+          profitDistribution: distributionPayload,
+          publishedAt,
+          publishedBy,
+          updatedAt: nowIso,
+          updatedBy: adminUser,
+        },
+        $setOnInsert: {
+          createdAt: nowIso,
+        },
+      },
+      { upsert: true }
+    );
+
+    // 4. Update ipos collection
+    await db.collection("ipos").updateOne(
+      { id: ipoId },
+      {
+        $set: {
+          profitDistribution: distributionPayload,
+          isCompleted: true,
+          status: "COMPLETED",
+          updatedAt: nowIso,
+        },
+      }
+    );
+
+    triggerAllPathRevalidations(ipoId);
+
+    return {
+      success: true,
+      totalProfit,
+      oneLotProfit,
+      memberCount: memberPayouts.length,
+    };
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : "Failed to save profit distribution.";
+    return { success: false, error: msg };
+  }
+}
+

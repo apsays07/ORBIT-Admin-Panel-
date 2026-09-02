@@ -3,8 +3,13 @@
 import React, { useState, useEffect } from "react";
 import { usePathname } from "next/navigation";
 import { Search } from "lucide-react";
-import { GlobalSearchDialog } from "@/components/layout/global-search-dialog";
+import dynamic from "next/dynamic";
 import { NotificationsPopover } from "@/components/layout/notifications-popover";
+
+const GlobalSearchDialog = dynamic(
+  () => import("@/components/layout/global-search-dialog").then((m) => m.GlobalSearchDialog),
+  { ssr: false }
+);
 
 interface AdminHeaderProps {
   userEmail?: string;

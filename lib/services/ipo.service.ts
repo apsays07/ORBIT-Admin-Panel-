@@ -58,41 +58,10 @@ export class IpoService {
     else if (sortField === "status") sort["status"] = sortDirection;
     else sort["createdAt"] = sortDirection;
 
-    function parseIpoDateTimestamp(doc: NexoIPORecord): number {
-      if (doc.metrics?.closeDate) {
-        const t = new Date(doc.metrics.closeDate).getTime();
-        if (!isNaN(t)) return t;
-      }
-      if (doc.metrics?.openDate) {
-        const t = new Date(doc.metrics.openDate).getTime();
-        if (!isNaN(t)) return t;
-      }
-      if (doc.createdAt) {
-        const t = new Date(doc.createdAt).getTime();
-        if (!isNaN(t)) return t;
-      }
-      return 0;
-    }
 
     const { statuses, facet } = await ipoRepo.findPaginatedIpos(filter, sort, skip, safeLimit);
     const total = facet.total?.[0]?.count || 0;
-    const allRows = facet.rows || [];
-
-    const sortedRows = [...allRows].sort((a, b) => {
-      if (sortField === "name") {
-        return sortDirection * a.name.localeCompare(b.name);
-      }
-      if (sortField === "recent") {
-        const cA = new Date(a.createdAt || "").getTime() || 0;
-        const cB = new Date(b.createdAt || "").getTime() || 0;
-        return sortDirection * (cA - cB);
-      }
-      const tA = parseIpoDateTimestamp(a);
-      const tB = parseIpoDateTimestamp(b);
-      return sortDirection * (tA - tB);
-    });
-
-    const docs = sortedRows.slice(skip, skip + safeLimit);
+    const docs = facet.rows || [];
     const meta = calculatePaginationMeta(total, page, safeLimit);
 
     // Scoped application counts
@@ -101,24 +70,36 @@ export class IpoService {
       pageIpoIds.length > 0
         ? await db
             .collection("applications")
-            .aggregate<{ _id: string; count: number }>([
+            .aggregate<{ _id: string; totalLots: number; formsCount: number }>([
               { $match: { ipoId: { $in: pageIpoIds } } },
-              { $group: { _id: "$ipoId", count: { $sum: { $ifNull: ["$numberOfPanCards", 1] } } } },
+              {
+                $group: {
+                  _id: "$ipoId",
+                  totalLots: { $sum: { $ifNull: ["$numberOfPanCards", 1] } },
+                  formsCount: { $sum: 1 },
+                },
+              },
             ])
             .maxTimeMS(8000)
             .toArray()
         : [];
 
-    const countMap = new Map<string, number>();
+    const countMap = new Map<string, { totalLots: number; formsCount: number }>();
     appCountsRaw.forEach((c) => {
-      if (c._id) countMap.set(c._id, c.count);
+      if (c._id) countMap.set(c._id, { totalLots: c.totalLots, formsCount: c.formsCount });
     });
 
-    const ipos: NexoIPORecord[] = docs.map((doc) => ({
-      ...doc,
-      _id: doc._id?.toString(),
-      applicationCount: countMap.get(doc.id) || 0,
-    }));
+    const ipos: NexoIPORecord[] = docs.map((doc) => {
+      const live = countMap.get(doc.id);
+      return {
+        ...doc,
+        _id: doc._id?.toString(),
+        applicationCount: live?.formsCount ?? doc.applicationCount ?? 0,
+        totalAppliedLots: live?.totalLots ?? (doc as any).totalAppliedLots ?? 0,
+        participantsCount: doc.participantsCount ?? 0,
+        combinedCapital: doc.combinedCapital ?? 0,
+      };
+    });
 
     return {
       ipos,

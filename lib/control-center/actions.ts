@@ -20,6 +20,8 @@ import {
   PanAuditTimelineItem,
 } from "@/types/control-center";
 import { logAuditEvent } from "@/lib/audit/actions";
+import { ApplicationRecord } from "@/types/application";
+import { syncIpoMetrics, syncMemberMetrics } from "@/lib/db/sync-counts";
 
 /**
  * Fetch authoritative, dynamic Control Center reconciliation data
@@ -264,4 +266,108 @@ export async function getPanAuditTimelineData(params: {
     allMembers: rawData.allMembers,
     selectedIpoId: params.selectedIpoId,
   });
+}
+
+/**
+ * Update an application's PAN numbers and mark related missing PAN issue as resolved
+ */
+export async function updateApplicationPan(params: {
+  applicationId: string;
+  panNumbers: string[];
+  markResolved?: boolean;
+}): Promise<{ success: boolean; error?: string }> {
+  try {
+    const adminUser = await verifyAdminSession();
+    if (!adminUser) {
+      return { success: false, error: "Unauthorized access" };
+    }
+
+    const db = await getDatabase();
+    if (!db) {
+      return { success: false, error: "Database unavailable" };
+    }
+
+    const { applicationId, panNumbers, markResolved = true } = params;
+    if (!applicationId) {
+      return { success: false, error: "Application ID is required" };
+    }
+
+    const panRegex = /^[A-Z]{5}[0-9]{4}[A-Z]{1}$/;
+    const cleanedPans: string[] = [];
+
+    for (const raw of panNumbers) {
+      const clean = (raw || "").trim().toUpperCase();
+      if (!clean) continue;
+      if (clean.startsWith("XUSER")) {
+        return { success: false, error: "Placeholder PANs starting with 'XUSER' are not accepted as valid genuine PANs." };
+      }
+      if (!panRegex.test(clean)) {
+        return { success: false, error: `Invalid PAN format "${clean}". Must follow 5 letters, 4 digits, 1 letter format (e.g. ABCDE1234F).` };
+      }
+      cleanedPans.push(clean);
+    }
+
+    if (cleanedPans.length === 0) {
+      return { success: false, error: "At least one valid PAN card is required." };
+    }
+
+    const appDoc = await db.collection<ApplicationRecord>("applications").findOne({ id: applicationId });
+    if (!appDoc) {
+      return { success: false, error: `Application ${applicationId} not found.` };
+    }
+
+    const nowIso = new Date().toISOString();
+    await db.collection("applications").updateOne(
+      { id: applicationId },
+      {
+        $set: {
+          panNumbers: cleanedPans,
+          updatedAt: nowIso,
+        },
+      }
+    );
+
+    if (markResolved) {
+      const repo = new ControlCenterRepository(db);
+      await repo.saveIssueStatusOverride({
+        issueId: `issue_missing_pan_${applicationId}`,
+        status: "RESOLVED",
+        actionTaken: `Updated PAN card to ${cleanedPans.join(", ")}`,
+        notes: `PAN corrected by ${adminUser}`,
+        previousValue: (appDoc.panNumbers || []).join(", ") || "No PAN",
+        newValue: cleanedPans.join(", "),
+        updatedBy: adminUser,
+      });
+    }
+
+    await logAuditEvent({
+      eventType: "APPLICATION_PAN_UPDATED",
+      category: "APPLICATION",
+      severity: "INFO",
+      actorUsername: adminUser,
+      targetType: "APPLICATION",
+      targetId: applicationId,
+      targetName: `${appDoc.applicantName} - ${appDoc.ipoName}`,
+      title: `Updated PAN Card for Application ${applicationId}`,
+      subtitle: `Admin updated PAN cards to ${cleanedPans.join(", ")}`,
+      metadata: {
+        applicationId,
+        previousPans: appDoc.panNumbers,
+        newPans: cleanedPans,
+      },
+    });
+
+    if (appDoc.ipoId) {
+      await syncIpoMetrics(appDoc.ipoId, db);
+    }
+    if (appDoc.memberId) {
+      await syncMemberMetrics([appDoc.memberId], db);
+    }
+
+    revalidatePath("/ad/control-center");
+    return { success: true };
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : "Failed to update PAN.";
+    return { success: false, error: message };
+  }
 }

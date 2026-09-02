@@ -127,6 +127,22 @@ export async function createSession(params: {
   return payload;
 }
 
+interface CachedSessionVerification {
+  result: SessionValidationResult;
+  expiresAt: number;
+}
+
+const _inMemorySessionCache = new Map<string, CachedSessionVerification>();
+const SESSION_CACHE_TTL_MS = 20000;
+
+export function invalidateSessionVerificationCache(sessionId?: string) {
+  if (sessionId) {
+    _inMemorySessionCache.delete(sessionId);
+  } else {
+    _inMemorySessionCache.clear();
+  }
+}
+
 /**
  * Validate the current session from the request cookie and verify against MongoDB.
  * Memoized per-request with React cache to eliminate duplicate DB lookups.
@@ -158,6 +174,12 @@ export const validateSession = cache(async function validateSession(): Promise<S
       // Cookie is expired
       await destroySession();
       return { authenticated: false, reason: "EXPIRED" };
+    }
+
+    // Check fast in-memory session cache first to eliminate DB roundtrip on section navigation
+    const cachedVerification = _inMemorySessionCache.get(payload.sessionId);
+    if (cachedVerification && now < cachedVerification.expiresAt) {
+      return cachedVerification.result;
     }
 
     // Verify session state in database
@@ -221,13 +243,20 @@ export const validateSession = cache(async function validateSession(): Promise<S
       console.warn("[validateSession] DB check skipped (resilient mode):", dbErr);
     }
 
-    return {
+    const finalResult: SessionValidationResult = {
       authenticated: true,
       user: payload.user,
       role: payload.role || "SUPER_ADMIN",
       sessionId: payload.sessionId,
       sessionData: payload,
     };
+
+    _inMemorySessionCache.set(payload.sessionId, {
+      result: finalResult,
+      expiresAt: now + SESSION_CACHE_TTL_MS,
+    });
+
+    return finalResult;
   } catch (error) {
     console.error("[validateSession] Unexpected error:", error);
     return { authenticated: false, reason: "ERROR" };
@@ -248,6 +277,7 @@ export async function destroySession(): Promise<void> {
       try {
         const payload: SessionPayload = JSON.parse(sessionCookie.value);
         if (payload.sessionId) {
+          invalidateSessionVerificationCache(payload.sessionId);
           const db = await getDatabase();
           if (db) {
             const nowIso = new Date().toISOString();

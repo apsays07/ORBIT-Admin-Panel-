@@ -331,6 +331,66 @@ export interface ControlCenterKPIs {
   mediumSeverityIssuesCount: number;
   lowSeverityIssuesCount: number;
   knownExceptionsCount: number;
+  missingPansCount: number;
+  criticalInsightsCount: number;
+  highInsightsCount: number;
+  mediumInsightsCount: number;
+  infoInsightsCount: number;
+}
+
+export type IpoIntelligencePriority = "CRITICAL" | "HIGH" | "MEDIUM" | "INFO";
+
+export type IpoIntelligenceCategory =
+  | "IPO_STATUS"
+  | "ALLOTMENT"
+  | "PROFIT"
+  | "CAPITAL"
+  | "APPLICATIONS"
+  | "PAN";
+
+export type IpoIntelligenceActionType = "NAVIGATE" | "MODAL" | "TAB";
+
+export interface IpoIntelligenceInsight {
+  id: string;
+  priority: IpoIntelligencePriority;
+  title: string;
+  explanation: string;
+  ipoId?: string;
+  ipoName?: string;
+  category: IpoIntelligenceCategory;
+  actionLabel: string;
+  actionType: IpoIntelligenceActionType;
+  actionTarget: string;
+  dateText?: string;
+  iconName: string;
+}
+
+export interface TodayIpoSummary {
+  activeIposCount: number;
+  managedApplicationsCount: number;
+  appliedLotsCount: number;
+  blockedCapital: number;
+  urgentAttentionItemsCount: number;
+  summaryLines: string[];
+}
+
+export interface MissingPanRecord {
+  id: string;
+  applicationId: string;
+  serialNumber: number;
+  memberName: string;
+  memberUsername?: string;
+  memberId?: string;
+  ipoId: string;
+  ipoName: string;
+  panStatus: "MISSING" | "INVALID_FORMAT" | "INCOMPLETE_LOTS";
+  panStatusLabel: string;
+  currentPans: string[];
+  dateAdded: string;
+  appliedLots: number;
+  applicationStatus: string;
+  actionRequired: string;
+  isResolved?: boolean;
 }
 
 export interface ControlCenterDashboardData {
@@ -344,6 +404,9 @@ export interface ControlCenterDashboardData {
   availableIpos: Array<{ id: string; name: string; status?: string; category?: string; count?: number }>;
   selectedIpoId: string;
   selectedIpoName: string;
+  todaySummary: TodayIpoSummary;
+  intelligenceInsights: IpoIntelligenceInsight[];
+  missingPanRecords: MissingPanRecord[];
 }
 
 export interface IssueStatusOverrideRecord {

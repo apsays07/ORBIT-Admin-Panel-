@@ -1,6 +1,6 @@
 import { getDatabase } from "@/lib/db/mongodb";
 import { ProfitRepository } from "@/lib/repositories/profit.repository";
-import { NexoIPORecord } from "@/types/ipo";
+import { NexoIPORecord, MemberPayout } from "@/types/ipo";
 import {
   calculatePerLotProfit,
   calculateMemberPayoutProfit,
@@ -177,17 +177,43 @@ export class ProfitService {
     });
 
     const distDoc = await profitRepo.findProfitDistributionByIpoId(selectedIpo.id);
-    const isPublished = Boolean(distDoc?.isPublished || selectedIpo.profitDistribution?.isPublished || selectedIpo.profitDistribution?.publishedAt);
+    const savedDist = (distDoc as any)?.profitDistribution || distDoc || selectedIpo.profitDistribution;
+    const isPublished = Boolean(
+      distDoc?.isPublished ||
+      (distDoc as any)?.profitDistribution?.isPublished ||
+      selectedIpo.profitDistribution?.isPublished ||
+      selectedIpo.profitDistribution?.publishedAt ||
+      (distDoc as any)?.publishedAt
+    );
 
-    const existingDist = distDoc || selectedIpo.profitDistribution;
-    let rawTotalProfit = normalizeNumeric(existingDist?.totalProfit, 0);
-    const rawOneLotProfit = normalizeNumeric(existingDist?.oneLotProfit, 0);
+    const savedPayouts: MemberPayout[] =
+      (distDoc as any)?.memberPayouts ||
+      savedDist?.memberPayouts ||
+      selectedIpo.profitDistribution?.memberPayouts ||
+      [];
+
+    const rawTotalProfit = normalizeNumeric(
+      savedDist?.totalProfit ?? (distDoc as any)?.totalProfit,
+      0
+    );
+    const rawOneLotProfit = normalizeNumeric(
+      savedDist?.oneLotProfit ?? (distDoc as any)?.oneLotProfit,
+      0
+    );
+    const rawAllottedLots = normalizeNumeric(
+      savedDist?.allottedLots ?? (distDoc as any)?.allottedLots,
+      allottedLotsCount
+    );
+    const rawTotalLots = normalizeNumeric(
+      savedDist?.totalLots ?? (distDoc as any)?.totalLots,
+      totalLotsApplied
+    );
 
     const effectiveAllottedLots = params.allottedLotsInput !== undefined
       ? params.allottedLotsInput
-      : allottedLotsCount;
+      : (isPublished && rawAllottedLots > 0 ? rawAllottedLots : allottedLotsCount);
 
-    const effectiveTotalLots = totalLotsApplied;
+    const effectiveTotalLots = isPublished && rawTotalLots > 0 ? rawTotalLots : totalLotsApplied;
 
     // Determine authoritative per-lot profit
     let perLotProfit = 0;
@@ -200,11 +226,16 @@ export class ProfitService {
     }
 
     const realizedProfit = isPublished
-      ? safeMultiply(perLotProfit, effectiveTotalLots)
+      ? (rawTotalProfit > 0 ? rawTotalProfit : safeMultiply(perLotProfit, effectiveTotalLots))
       : (params.realizedProfitInput !== undefined ? params.realizedProfitInput : safeMultiply(perLotProfit, effectiveTotalLots));
 
     // Resolve member usernames and avatars
-    const allMemberIds = Array.from(memberMap.keys()).filter(Boolean);
+    const allMemberIds = Array.from(
+      new Set([
+        ...Array.from(memberMap.keys()),
+        ...savedPayouts.map((p) => p.memberId),
+      ])
+    ).filter(Boolean);
 
     const memberDocs = allMemberIds.length > 0
       ? await db.collection("members").find(
@@ -221,25 +252,69 @@ export class ProfitService {
       });
     });
 
-    // Compute live member rows (NEVER rely on a stale snapshot array)
+    // Compute or restore member rows
     const memberRows: CalculatedMemberRow[] = [];
-    memberMap.forEach((val) => {
-      const lots = val.lots;
-      const profit = calculateMemberPayoutProfit(lots, perLotProfit);
-      const prof = memberProfileMap.get(val.memberId);
-      const rawUser = prof?.username || val.name;
-      const formattedUser = rawUser.startsWith("@") ? rawUser : `@${rawUser}`;
 
-      memberRows.push({
-        memberId: val.memberId,
-        name: prof?.name || val.name,
-        username: formattedUser,
-        pan: val.pan,
-        contribution: val.contribution,
-        lots,
-        profit,
+    if (isPublished && savedPayouts.length > 0) {
+      // Use permanently stored published member payouts
+      const seenMemberIds = new Set<string>();
+      savedPayouts.forEach((p) => {
+        seenMemberIds.add(p.memberId);
+        const prof = memberProfileMap.get(p.memberId);
+        const rawUser = p.name?.startsWith("@") ? p.name : (prof?.username || p.name);
+        const formattedUser = rawUser.startsWith("@") ? rawUser : `@${rawUser}`;
+
+        memberRows.push({
+          memberId: p.memberId,
+          name: prof?.name || p.name.replace(/^@/, ""),
+          username: formattedUser,
+          pan: p.pan || "—",
+          contribution: normalizeNumeric(p.contribution, 0),
+          lots: normalizeNumeric(p.lots, 0),
+          profit: normalizeNumeric(p.profit, 0),
+        });
       });
-    });
+
+      // Include any newly added applicants if not already in saved payouts
+      memberMap.forEach((val, memId) => {
+        if (!seenMemberIds.has(memId)) {
+          const lots = val.lots;
+          const profit = calculateMemberPayoutProfit(lots, perLotProfit);
+          const prof = memberProfileMap.get(val.memberId);
+          const rawUser = prof?.username || val.name;
+          const formattedUser = rawUser.startsWith("@") ? rawUser : `@${rawUser}`;
+
+          memberRows.push({
+            memberId: val.memberId,
+            name: prof?.name || val.name,
+            username: formattedUser,
+            pan: val.pan,
+            contribution: val.contribution,
+            lots,
+            profit,
+          });
+        }
+      });
+    } else {
+      // Live calculation for pending/unpublished IPOs
+      memberMap.forEach((val) => {
+        const lots = val.lots;
+        const profit = calculateMemberPayoutProfit(lots, perLotProfit);
+        const prof = memberProfileMap.get(val.memberId);
+        const rawUser = prof?.username || val.name;
+        const formattedUser = rawUser.startsWith("@") ? rawUser : `@${rawUser}`;
+
+        memberRows.push({
+          memberId: val.memberId,
+          name: prof?.name || val.name,
+          username: formattedUser,
+          pan: val.pan,
+          contribution: val.contribution,
+          lots,
+          profit,
+        });
+      });
+    }
 
     let totalMoneyApplied = 0;
     memberRows.forEach((m) => {
@@ -257,15 +332,15 @@ export class ProfitService {
     return {
       selectedIpo,
       availableIpos,
-      totalApplicantsCount: memberMap.size,
+      totalApplicantsCount: memberRows.length || memberMap.size,
       totalMoneyApplied,
       totalAppliedLots: effectiveTotalLots,
       allottedLots: effectiveAllottedLots,
       realizedProfit,
       perLotProfit,
       isPublished,
-      publishedAt: existingDist?.publishedAt,
-      publishedBy: existingDist?.publishedBy,
+      publishedAt: savedDist?.publishedAt || (distDoc as any)?.publishedAt,
+      publishedBy: savedDist?.publishedBy || (distDoc as any)?.publishedBy,
       members: filteredRows,
     };
   }

@@ -1,6 +1,15 @@
 import { Db, Filter } from "mongodb";
 import { MemberData } from "@/types/member";
 
+let _cachedMembersForSelection: any[] | null = null;
+let _lastMembersForSelectionFetch = 0;
+const MEMBERS_SELECTION_CACHE_TTL_MS = 30000;
+
+export function invalidateMembersCache() {
+  _cachedMembersForSelection = null;
+  _lastMembersForSelectionFetch = 0;
+}
+
 export class MemberRepository {
   constructor(private db: Db) {}
 
@@ -20,6 +29,11 @@ export class MemberRepository {
   }
 
   async findMembersForSelection() {
+    const now = Date.now();
+    if (_cachedMembersForSelection && now - _lastMembersForSelectionFetch < MEMBERS_SELECTION_CACHE_TTL_MS) {
+      return _cachedMembersForSelection;
+    }
+
     const docs = await this.collection
       .find(
         {},
@@ -41,10 +55,14 @@ export class MemberRepository {
       .maxTimeMS(8000)
       .toArray();
 
-    return docs.map((d: any) => ({
+    const mapped = docs.map((d: any) => ({
       ...d,
       _id: d._id ? d._id.toString() : undefined,
     }));
+
+    _cachedMembersForSelection = mapped;
+    _lastMembersForSelectionFetch = now;
+    return mapped;
   }
 
   async findPaginatedMembers(
@@ -93,20 +111,24 @@ export class MemberRepository {
 
   async insertMember(doc: MemberData): Promise<void> {
     await this.collection.insertOne(doc as any);
+    invalidateMembersCache();
   }
 
   async updateMember(id: string, updates: Partial<MemberData>): Promise<boolean> {
     const res = await this.collection.updateOne({ id }, { $set: updates });
+    invalidateMembersCache();
     return res.matchedCount > 0;
   }
 
   async deleteMember(id: string): Promise<boolean> {
     const res = await this.collection.deleteOne({ id });
+    invalidateMembersCache();
     return res.deletedCount > 0;
   }
 
   async deleteMembers(ids: string[]): Promise<number> {
     const res = await this.collection.deleteMany({ id: { $in: ids } });
+    invalidateMembersCache();
     return res.deletedCount;
   }
 

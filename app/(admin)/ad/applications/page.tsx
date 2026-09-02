@@ -40,7 +40,7 @@ export default async function ApplicationsPage({ searchParams }: ApplicationsPag
   const minAmount = resolvedParams.minAmount ? parseFloat(resolvedParams.minAmount) : undefined;
   const maxAmount = resolvedParams.maxAmount ? parseFloat(resolvedParams.maxAmount) : undefined;
   const page = parseInt(resolvedParams.page || "1", 10) || 1;
-  const limit = parseInt(resolvedParams.limit || "500", 10) || 500;
+  const limit = parseInt(resolvedParams.limit || "50", 10) || 50;
   const sortField = resolvedParams.sort || "createdAt";
   const sortOrder = resolvedParams.order || "desc";
 

@@ -13,8 +13,13 @@ import {
   markAllNotificationsAsRead,
   clearAllNotifications,
 } from "@/lib/notification/actions";
-import { NotificationManagerDialog } from "@/components/layout/notification-manager-dialog";
+import dynamic from "next/dynamic";
 import { useToast } from "@/components/ui/toast";
+
+const NotificationManagerDialog = dynamic(
+  () => import("@/components/layout/notification-manager-dialog").then((m) => m.NotificationManagerDialog),
+  { ssr: false }
+);
 import {
   Bell,
   Plus,
